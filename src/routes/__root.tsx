@@ -90,9 +90,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c67fbd34-d3c6-480f-8113-70b60122cd7d/id-preview-7520133f--df770f6f-d844-44f9-95a2-d86961123fc0.lovable.app-1783033576913.png" },
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c67fbd34-d3c6-480f-8113-70b60122cd7d/id-preview-7520133f--df770f6f-d844-44f9-95a2-d86961123fc0.lovable.app-1783033576913.png" },
     ],
-    links: [
-      { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/icon.png", type: "image/png" },
+    
+    
+links: [
+  { rel: "stylesheet", href: appCss },
+  { rel: "icon", href: "/icon.png", type: "image/png" },
+
+  { rel: "manifest", href: "/manifest.json" },
+  { rel: "apple-touch-icon", href: "/icon.png" },
+
+
+
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
