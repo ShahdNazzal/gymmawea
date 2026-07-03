@@ -65,12 +65,16 @@ function AuthPage() {
       >
         <div className="text-center mb-8">
           <motion.div
-            animate={{ scale: [1, 1.1, 1] }}
-            transition={{ duration: 3, repeat: Infinity }}
-            className="inline-flex w-16 h-16 rounded-3xl gradient-primary items-center justify-center shadow-elegant mb-4"
-          >
-            <Sparkles className="w-8 h-8 text-primary-foreground" />
-          </motion.div>
+  animate={{ scale: [1, 1.1, 1] }}
+  transition={{ duration: 3, repeat: Infinity }}
+  className="inline-flex mb-4"
+>
+  <img
+    src="/favicon3.png"
+    alt="جمّاوية"
+    className="w-28 h-28 object-contain"
+  />
+</motion.div>
           <h1 className="text-4xl font-extrabold tracking-tight">جمّاوية</h1>
           <p className="text-muted-foreground mt-2 text-sm">
             رحلتك للياقة تبدأ من هنا

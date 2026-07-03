@@ -65,9 +65,12 @@ export function DesktopSidebar() {
     <aside className="hidden lg:flex fixed right-0 top-0 h-screen w-64 border-l border-border bg-sidebar flex-col p-6">
       <div className="mb-8">
         <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-2xl gradient-primary shadow-soft" />
-          <span className="text-2xl font-extrabold">جمّاوية</span>
-        </div>
+  <img
+  src="/favicon.png"
+  alt="جمّاوية"
+  className="w-50 h-15 object-contain block"
+/>
+</div>
       </div>
       <ul className="space-y-1 flex-1">
         {items.map((it) => {
