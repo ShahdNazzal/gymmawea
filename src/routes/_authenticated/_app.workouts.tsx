@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2, ImagePlus } from "lucide-react";
+import { Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2, ImagePlus, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,7 +18,8 @@ export const Route = createFileRoute("/_authenticated/_app/workouts")({
   component: WorkoutsPage,
 });
 
-const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const DAYS = ["أحد", "إثنين", "ثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const REST_DAY_TITLE = "يوم راحة";
 
 function WorkoutsPage() {
   const { user } = useAuth();
@@ -31,6 +32,7 @@ function WorkoutsPage() {
   const [timerOpen, setTimerOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [schedule, setSchedule] = useState<any[]>([]);
+  const [openDayId, setOpenDayId] = useState<string | null>(null);
 
   const loadAll = async () => {
     if (!user) return;
@@ -44,7 +46,7 @@ function WorkoutsPage() {
     }
     const { data: up } = await supabase.from("workouts").select("*").eq("owner_user_id", user.id).order("created_at", { ascending: false });
     setPersonalPlans(up ?? []);
-    const { data: ws } = await supabase.from("weekly_schedules").select("*, workouts(name, image_url)").eq("user_id", user.id).order("day_of_week");
+    const { data: ws } = await supabase.from("weekly_schedules").select("*, workouts(name, image_url, exercises)").eq("user_id", user.id).order("day_of_week");
     setSchedule(ws ?? []);
     setLoading(false);
   };
@@ -87,25 +89,106 @@ function WorkoutsPage() {
         <PlanView plan={activePersonal} userId={user!.id} sourceType="personal" sourceId={activePersonal.id} />
       )}
 
-      {schedule.length > 0 && (
-        <Card className="p-4 rounded-3xl">
-          <div className="flex items-center justify-between mb-3">
-            <div className="font-bold text-sm flex items-center gap-2"><Calendar className="w-4 h-4" /> جدولك الأسبوعي</div>
-            <button onClick={() => setScheduleOpen(true)} className="text-xs text-primary">تعديل</button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {DAYS.map((d, i) => {
-              const item = schedule.find((s) => s.day_of_week === i);
-              return (
-                <div key={i} className={`p-2 rounded-xl text-[10px] ${item ? "gradient-primary text-primary-foreground" : "bg-muted"}`}>
-                  <div className="font-bold">{d.slice(0, 3)}</div>
-                  <div className="mt-1 truncate">{item?.title ?? "—"}</div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
+      {/* الجدول الأسبوعي - عرض تفصيلي كامل لكل يوم مع تمارين الخطة المرتبطة (اسم/مجاميع/عدات) */}
+      <Card className="p-5 rounded-3xl">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-bold text-sm flex items-center gap-2"><Calendar className="w-4 h-4" /> جدولك الأسبوعي</div>
+          <button onClick={() => setScheduleOpen(true)} className="text-xs text-primary font-semibold">تعديل</button>
+        </div>
+
+        {schedule.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-6">لسا ما عملتي جدول أسبوعي — اضغطي "تعديل" لتحديد خطتك لكل يوم</p>
+        ) : (
+          <>
+            {/* نظرة سريعة على الأسبوع كامل */}
+            <div className="grid grid-cols-7 gap-1 text-center mb-4">
+              {DAYS.map((d, i) => {
+                const item = schedule.find((s) => s.day_of_week === i);
+                const isRest = item?.title === REST_DAY_TITLE;
+                return (
+                  <div
+                    key={i}
+                    className={`p-2 rounded-xl text-[10px] ${
+                      item ? (isRest ? "bg-muted text-muted-foreground" : "gradient-primary text-primary-foreground") : "bg-muted/50"
+                    }`}
+                  >
+                    <div className="font-bold">{d.slice(0, 3)}</div>
+                    <div className="mt-1 truncate">{item?.title ?? "—"}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* تفاصيل كل يوم على حدة - قابلة للتوسيع لعرض التمارين كاملة */}
+            <div className="space-y-2">
+              {schedule
+                .slice()
+                .sort((a, b) => a.day_of_week - b.day_of_week)
+                .map((s) => {
+                  const isRest = s.title === REST_DAY_TITLE;
+                  const isOpen = openDayId === s.id;
+                  // تفاصيل خطة التمرين المرتبطة بهذا اليوم (أيام + تمارين كل يوم)
+                  const workoutDays = Array.isArray(s.workouts?.exercises) ? s.workouts.exercises : [];
+                  const hasDetails = !isRest && workoutDays.length > 0;
+
+                  return (
+                    <div key={s.id} className="rounded-2xl overflow-hidden bg-muted/50">
+                      <button
+                        type="button"
+                        disabled={!hasDetails}
+                        onClick={() => hasDetails && setOpenDayId((prev) => (prev === s.id ? null : s.id))}
+                        className="w-full flex items-center gap-2 p-3 text-right"
+                      >
+                        <div className="w-16 text-xs font-extrabold text-primary shrink-0">{DAYS[s.day_of_week]}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold truncate">{s.title}</div>
+                          {s.workouts?.name && (
+                            <div className="text-[10px] text-muted-foreground truncate">{s.workouts.name}</div>
+                          )}
+                        </div>
+                        {hasDetails && (isOpen ? (
+                          <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                        ))}
+                      </button>
+
+                      <AnimatePresence initial={false}>
+                        {isOpen && hasDetails && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-3 pb-3 space-y-3 border-t border-border/50 pt-2">
+                              {workoutDays.map((wd: any, wi: number) => (
+                                <div key={wi} className="space-y-1.5">
+                                  {workoutDays.length > 1 && (
+                                    <div className="text-[11px] font-bold text-primary">{wd.name ?? `اليوم ${wd.day ?? wi + 1}`}</div>
+                                  )}
+                                  <ul className="space-y-1.5">
+                                    {(wd.items ?? []).map((ex: any, ei: number) => (
+                                      <li key={ei} className="flex items-center justify-between bg-background rounded-xl px-3 py-2">
+                                        <span className="text-xs font-semibold">{ex?.name ?? `تمرين ${ei + 1}`}</span>
+                                        <span className="text-[11px] font-semibold text-muted-foreground shrink-0">{ex?.sets} مجموعات × {ex?.reps} عدات</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+            </div>
+          </>
+        )}
+      </Card>
 
       <div className="pt-4">
         <div className="flex items-center justify-between mb-3">
@@ -412,6 +495,7 @@ function RestTimerDialog({ open, onClose }: any) {
 
 function WeeklyScheduleDialog({ open, onClose, userId, schedule, allPlans, onSaved }: any) {
   const [local, setLocal] = useState<Record<number, { title: string; workout_id: string | null }>>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -421,26 +505,47 @@ function WeeklyScheduleDialog({ open, onClose, userId, schedule, allPlans, onSav
   }, [open, schedule]);
 
   const save = async () => {
-    await supabase.from("weekly_schedules").delete().eq("user_id", userId);
-    const rows = Object.entries(local)
-      .filter(([, v]) => v.title.trim())
-      .map(([day, v]) => ({ user_id: userId, day_of_week: +day, title: v.title, workout_id: v.workout_id }));
-    if (rows.length) await supabase.from("weekly_schedules").insert(rows);
-    toast.success("تم حفظ الجدول");
-    onClose(); onSaved();
+    setSaving(true);
+    try {
+      // نبني صف لكل الأيام السبعة، وإذا اليوم فاضي (بدون عنوان) نعتبره تلقائياً "يوم راحة"
+      const rows = DAYS.map((_, day) => {
+        const entry = local[day];
+        const title = entry?.title?.trim();
+        return {
+          user_id: userId,
+          day_of_week: day,
+          title: title ? title : REST_DAY_TITLE,
+          workout_id: title ? entry?.workout_id ?? null : null,
+        };
+      });
+
+      const { error: delError } = await supabase.from("weekly_schedules").delete().eq("user_id", userId);
+      if (delError) throw delError;
+
+      const { error: insError } = await supabase.from("weekly_schedules").insert(rows);
+      if (insError) throw insError;
+
+      toast.success("تم حفظ الجدول");
+      onClose(); onSaved();
+    } catch (err: any) {
+      toast.error(err.message ?? "تعذر حفظ الجدول");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="rounded-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader><DialogTitle>الجدول الأسبوعي</DialogTitle></DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">اتركي اليوم فاضي إذا كان يوم راحة — رح ينحفظ تلقائياً كذلك.</p>
         <div className="space-y-2">
           {DAYS.map((d, i) => (
             <div key={i} className="grid grid-cols-[80px_1fr] gap-2 items-center">
               <div className="text-sm font-semibold">{d}</div>
               <div className="grid gap-1">
                 <Input
-                  placeholder="مثال: تمرين صدر"
+                  placeholder="مثال: تمرين صدر (اتركيه فاضي = يوم راحة)"
                   value={local[i]?.title ?? ""}
                   onChange={(e) => setLocal({ ...local, [i]: { title: e.target.value, workout_id: local[i]?.workout_id ?? null } })}
                   className="rounded-xl h-9"
@@ -457,7 +562,9 @@ function WeeklyScheduleDialog({ open, onClose, userId, schedule, allPlans, onSav
             </div>
           ))}
         </div>
-        <Button onClick={save} className="w-full rounded-2xl gradient-primary">حفظ الجدول</Button>
+        <Button disabled={saving} onClick={save} className="w-full rounded-2xl gradient-primary">
+          {saving ? "جاري الحفظ..." : "حفظ الجدول"}
+        </Button>
       </DialogContent>
     </Dialog>
   );
