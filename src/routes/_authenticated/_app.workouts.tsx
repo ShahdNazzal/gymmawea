@@ -18,7 +18,8 @@ export const Route = createFileRoute("/_authenticated/_app/workouts")({
   component: WorkoutsPage,
 });
 
-const DAYS = ["أحد", "إثنين", "ثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const DAYS_SHORT = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"];
 const REST_DAY_TITLE = "يوم راحة";
 
 function WorkoutsPage() {
@@ -89,6 +90,9 @@ function WorkoutsPage() {
         <PlanView plan={activePersonal} userId={user!.id} sourceType="personal" sourceId={activePersonal.id} />
       )}
 
+
+
+   
       {/* الجدول الأسبوعي - عرض تفصيلي كامل لكل يوم مع تمارين الخطة المرتبطة (اسم/مجاميع/عدات) */}
       <Card className="p-5 rounded-3xl">
         <div className="flex items-center justify-between mb-3">
@@ -112,7 +116,7 @@ function WorkoutsPage() {
                       item ? (isRest ? "bg-muted text-muted-foreground" : "gradient-primary text-primary-foreground") : "bg-muted/50"
                     }`}
                   >
-                    <div className="font-bold">{d.slice(0, 3)}</div>
+                    <div className="font-bold">{DAYS_SHORT[i]}</div>
                     <div className="mt-1 truncate">{item?.title ?? "—"}</div>
                   </div>
                 );
@@ -189,6 +193,7 @@ function WorkoutsPage() {
           </>
         )}
       </Card>
+
 
       <div className="pt-4">
         <div className="flex items-center justify-between mb-3">
@@ -386,6 +391,7 @@ function SwitchDialog({ open, onClose, userId, activeId, onSwitched, currentSele
     </Dialog>
   );
 }
+
 
 function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
   const [name, setName] = useState("");

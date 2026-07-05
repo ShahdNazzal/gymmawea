@@ -20,18 +20,21 @@ function HomePage() {
   const [workoutsCount, setWorkoutsCount] = useState(0);
   const [streak, setStreak] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [{ data: p }, { data: f }, { data: logs }] = await Promise.all([
+      const [{ data: p }, { data: f }, { data: logs }, { count: unread }] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
         supabase.from("user_fitness_profile").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("workout_logs").select("completed_at").eq("user_id", user.id).order("completed_at", { ascending: false }),
+        supabase.from("messages").select("*", { count: "exact", head: true }).eq("recipient_id", user.id),
       ]);
       setProfile(p);
       setFp(f);
       setWorkoutsCount(logs?.length ?? 0);
+      setUnreadCount(unread ?? 0);
       // simple streak: count consecutive days back from today
       if (logs && logs.length) {
         const days = new Set(logs.map((l) => new Date(l.completed_at).toDateString()));
@@ -47,12 +50,23 @@ function HomePage() {
     })();
   }, [user]);
 
-  
-  
+  // تحديث فوري لعدد الرسائل غير المقروءة لما توصل رسالة جديدة والمستخدم فاتح الداشبورد
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`home-unread-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${user.id}` },
+        () => setUnreadCount((c) => c + 1)
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
-<link href="https://fonts.googleapis.com/css2?family=El+Messiri:wght@400;500;600;700&display=swap" rel="stylesheet"></link>
-
-const greeting = new Date().getHours() < 12 ? "صباح الخير" : new Date().getHours() < 18 ? "مساء النور" : "مساؤك ورد";
+  const greeting = new Date().getHours() < 12 ? "صباح الخير" : new Date().getHours() < 18 ? "مساء النور" : "مساؤك ورد";
 
   return (
     <div className="space-y-6">
@@ -60,9 +74,6 @@ const greeting = new Date().getHours() < 12 ? "صباح الخير" : new Date()
         <p className="text-muted-foreground text-sm">{greeting} </p>
         <h1 className="text-3xl font-extrabold mt-1">{profile?.full_name ?? "أهلاً"}</h1>
       </motion.div>
-
-
-
 
       {role === "user" && (
         <>
@@ -99,12 +110,12 @@ const greeting = new Date().getHours() < 12 ? "صباح الخير" : new Date()
             <QuickAction to="/workouts" icon={<Dumbbell className="w-6 h-6" />} title="تمرين اليوم" />
             <QuickAction to="/nutrition" icon={<Apple className="w-6 h-6" />} title="خطة التغذية" />
             <QuickAction to="/trainers" icon={<TrendingUp className="w-6 h-6" />} title="اكتشفي مدربات" />
-            <QuickAction to="/chat" icon={<MessageCircle className="w-6 h-6" />} title="الشات" />
+            <QuickAction to="/chat" icon={<MessageCircle className="w-6 h-6" />} title="الشات" badge={unreadCount} />
           </div>
         </>
       )}
 
-      {role === "trainer" && <TrainerHome userId={user!.id} />}
+      {role === "trainer" && <TrainerHome userId={user!.id} unreadCount={unreadCount} />}
     </div>
   );
 }
@@ -128,13 +139,18 @@ function StatCard({ icon, value, label }: { icon: React.ReactNode; value: any; l
   );
 }
 
-function QuickAction({ to, icon, title }: { to: any; icon: React.ReactNode; title: string }) {
+function QuickAction({ to, icon, title, badge }: { to: any; icon: React.ReactNode; title: string; badge?: number }) {
   return (
     <Link to={to}>
       <motion.div
         whileTap={{ scale: 0.97 }}
-        className="p-5 rounded-2xl bg-card border border-border shadow-soft hover:border-primary/40 transition"
+        className="relative p-5 rounded-2xl bg-card border border-border shadow-soft hover:border-primary/40 transition"
       >
+        {!!badge && badge > 0 && (
+          <div className="absolute -top-2 -left-2 min-w-[22px] h-[22px] px-1 rounded-full bg-destructive text-destructive-foreground text-[11px] font-extrabold flex items-center justify-center shadow-soft">
+            {badge > 99 ? "99+" : badge}
+          </div>
+        )}
         <div className="w-11 h-11 rounded-xl bg-secondary text-primary flex items-center justify-center mb-3">{icon}</div>
         <div className="font-bold text-sm">{title}</div>
       </motion.div>
@@ -142,7 +158,7 @@ function QuickAction({ to, icon, title }: { to: any; icon: React.ReactNode; titl
   );
 }
 
-function TrainerHome({ userId }: { userId: string }) {
+function TrainerHome({ userId, unreadCount }: { userId: string; unreadCount: number }) {
   const [subs, setSubs] = useState(0);
   const [posts, setPosts] = useState(0);
   useEffect(() => {
@@ -161,6 +177,23 @@ function TrainerHome({ userId }: { userId: string }) {
         <StatCard icon={<TrendingUp />} value={subs} label="مشتركات" />
         <StatCard icon={<Sparkles />} value={posts} label="منشورات" />
       </div>
+
+      <Link to="/chat" className="block relative">
+        <Card className="p-5 rounded-2xl border-none shadow-soft flex items-center justify-between">
+          <div>
+            <div className="font-bold flex items-center gap-2">
+              <MessageCircle className="w-4 h-4" /> الشات
+            </div>
+            <div className="text-sm text-muted-foreground mt-1">تابعي محادثاتك مع الأعضاء</div>
+          </div>
+          {unreadCount > 0 && (
+            <div className="min-w-[26px] h-[26px] px-1.5 rounded-full bg-destructive text-destructive-foreground text-xs font-extrabold flex items-center justify-center shadow-soft">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </div>
+          )}
+        </Card>
+      </Link>
+
       <Link to="/profile" className="block">
         <Card className="p-5 rounded-2xl border-none shadow-soft">
           <div className="font-bold">اذهبي إلى ملفك لإدارة المنشورات</div>

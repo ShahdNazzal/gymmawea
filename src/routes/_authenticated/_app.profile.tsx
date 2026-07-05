@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_authenticated/_app/profile")({
   component: ProfilePage,
 });
 
-const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
 function ProfilePage() {
   const { user, role, signOut } = useAuth();
@@ -173,8 +173,8 @@ function ProfilePage() {
               {DAYS.map((d, i) => {
                 const item = schedule.find((s) => s.day_of_week === i);
                 return (
-                  <div key={i} className={`p-2 rounded-xl text-[10px] ${item ? "gradient-primary text-primary-foreground" : "bg-muted"}`}>
-                    <div className="font-bold">{d.slice(0, 3)}</div>
+                  <div key={i} className={`p-1.5 rounded-xl text-[9px] leading-tight ${item ? "gradient-primary text-primary-foreground" : "bg-muted"}`}>
+                    <div className="font-bold break-words">{d}</div>
                     <div className="mt-1 truncate">{item?.title ?? "—"}</div>
                   </div>
                 );
@@ -183,7 +183,7 @@ function ProfilePage() {
             <div className="space-y-1.5">
               {schedule.map((s) => (
                 <div key={s.id} className="flex items-center gap-2 p-2 rounded-xl bg-muted/50">
-                  <div className="w-14 text-[11px] font-bold text-primary shrink-0">{DAYS[s.day_of_week]}</div>
+                  <div className="w-16 text-[11px] font-bold text-primary shrink-0">{DAYS[s.day_of_week]}</div>
                   <div className="flex-1 min-w-0 text-xs font-semibold truncate">{s.title}</div>
                   {s.workouts?.name && (
                     <div className="text-[10px] text-muted-foreground truncate shrink-0 max-w-[100px]">{s.workouts.name}</div>
@@ -194,7 +194,6 @@ function ProfilePage() {
           </>
         )}
       </Card>
-
       {/* المنشورات بشكل شبكة على طريقة انستقرام */}
       <Card className="p-5 rounded-3xl">
         <div className="flex items-center justify-between mb-3">

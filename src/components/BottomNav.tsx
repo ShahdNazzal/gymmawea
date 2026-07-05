@@ -6,9 +6,12 @@ import { useAuth } from "@/lib/auth-context";
 const baseItems = [
   { to: "/home", label: "الرئيسية", icon: Home },
   { to: "/workouts", label: "تمارين", icon: Dumbbell },
+  { to: "/nutrition", label: "تغذيتي", icon: Apple },
+
   { to: "/trainers", label: "مدربات", icon: Users },
   { to: "/search", label: "بحث", icon: Search },
   { to: "/profile", label: "ملفي", icon: User },
+
 ] as const;
 
 const trainerItems = [

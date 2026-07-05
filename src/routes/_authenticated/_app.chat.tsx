@@ -9,6 +9,10 @@ import { MessageCircle, Send, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
+// نستخدم هاد المتغير بكل استعلامات عمود "read" لأنه ملف الأنواع التلقائي تبع Supabase
+// لسا ما تحدّث ليعرف بعمود read الجديد بجدول messages.
+const db = supabase as any;
+
 export const Route = createFileRoute("/_authenticated/_app/chat")({
   head: () => ({ meta: [{ title: "الشات — جمّاوية" }] }),
   component: ChatPage,
@@ -103,6 +107,16 @@ function ChatView({ userId, otherId, onBack }: any) {
   const [other, setOther] = useState<any>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  const markAsRead = async () => {
+    const { error } = await db
+      .from("messages")
+      .update({ read: true })
+      .eq("recipient_id", userId)
+      .eq("sender_id", otherId)
+      .eq("read", false);
+    if (error) console.error("markAsRead error:", error);
+  };
+
   useEffect(() => {
     (async () => {
       const { data: o } = await supabase.from("profiles").select("*").eq("id", otherId).maybeSingle();
@@ -113,6 +127,9 @@ function ChatView({ userId, otherId, onBack }: any) {
         .or(`and(sender_id.eq.${userId},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${userId})`)
         .order("created_at");
       setMessages(msgs ?? []);
+
+      // نعلّم كل الرسائل الجاية من هالشخص كـ "مقروءة" بمجرد ما نفتح المحادثة
+      await markAsRead();
     })();
 
     const channel = supabase
@@ -121,14 +138,22 @@ function ChatView({ userId, otherId, onBack }: any) {
         const m = payload.new as any;
         if ((m.sender_id === userId && m.recipient_id === otherId) || (m.sender_id === otherId && m.recipient_id === userId)) {
           setMessages((prev) => [...prev, m]);
+          // إذا الرسالة الجديدة وصلت وأنا فاتحة نفس المحادثة، بنعلّمها مقروءة فوراً
+          if (m.recipient_id === userId && m.sender_id === otherId) {
+            markAsRead();
+          }
         }
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userId, otherId]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const send = async () => {
     if (!text.trim()) return;
@@ -140,7 +165,9 @@ function ChatView({ userId, otherId, onBack }: any) {
   return (
     <div className="flex flex-col h-[calc(100vh-140px)]">
       <div className="flex items-center gap-3 pb-3 border-b">
-        <Button variant="ghost" size="icon" onClick={onBack} className="rounded-xl"><ArrowRight className="w-5 h-5" /></Button>
+        <Button variant="ghost" size="icon" onClick={onBack} className="rounded-xl">
+          <ArrowRight className="w-5 h-5" />
+        </Button>
         <div className="w-10 h-10 rounded-xl gradient-primary text-primary-foreground flex items-center justify-center font-bold">
           {other?.full_name?.[0]}
         </div>
@@ -164,7 +191,9 @@ function ChatView({ userId, otherId, onBack }: any) {
       </div>
       <div className="flex gap-2 pt-2 border-t">
         <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="اكتبي رسالة..." className="rounded-2xl" />
-        <Button onClick={send} className="rounded-2xl gradient-primary"><Send className="w-4 h-4" /></Button>
+        <Button onClick={send} className="rounded-2xl gradient-primary">
+          <Send className="w-4 h-4" />
+        </Button>
       </div>
     </div>
   );
