@@ -8,6 +8,10 @@ import { Flame, Target, TrendingUp, Dumbbell, Apple, MessageCircle, Sparkles } f
 import { GOAL_LABELS, bmiCategory } from "@/lib/workout-rules";
 import { Skeleton } from "@/components/ui/skeleton";
 
+// نستخدم هاد المتغير بكل استعلامات عمود "read" لأنه ملف الأنواع التلقائي تبع Supabase
+// لسا ما تحدّث ليعرف بعمود read الجديد بجدول messages. هيك بنتفادى أخطاء TypeScript.
+const db = supabase as any;
+
 export const Route = createFileRoute("/_authenticated/_app/home")({
   head: () => ({ meta: [{ title: "الرئيسية — جمّاوية" }] }),
   component: HomePage,
@@ -20,21 +24,34 @@ function HomePage() {
   const [workoutsCount, setWorkoutsCount] = useState(0);
   const [streak, setStreak] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [unreadCount, setUnreadCount] = useState(0);
+  // بنخزن معرفات الأشخاص يلي عندهم رسائل غير مقروءة (مش عدد الرسائل)
+  const [unreadSenderIds, setUnreadSenderIds] = useState<Set<string>>(new Set());
+  const unreadCount = unreadSenderIds.size;
+
+  const loadUnread = async (userId: string) => {
+    const { data, error } = await db
+      .from("messages")
+      .select("sender_id")
+      .eq("recipient_id", userId)
+      .eq("read", false);
+    if (error) {
+      console.error("loadUnread error:", error);
+      return;
+    }
+    setUnreadSenderIds(new Set((data ?? []).map((m: any) => m.sender_id)));
+  };
 
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [{ data: p }, { data: f }, { data: logs }, { count: unread }] = await Promise.all([
+      const [{ data: p }, { data: f }, { data: logs }] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
         supabase.from("user_fitness_profile").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("workout_logs").select("completed_at").eq("user_id", user.id).order("completed_at", { ascending: false }),
-        supabase.from("messages").select("*", { count: "exact", head: true }).eq("recipient_id", user.id),
       ]);
       setProfile(p);
       setFp(f);
       setWorkoutsCount(logs?.length ?? 0);
-      setUnreadCount(unread ?? 0);
       // simple streak: count consecutive days back from today
       if (logs && logs.length) {
         const days = new Set(logs.map((l) => new Date(l.completed_at).toDateString()));
@@ -47,20 +64,36 @@ function HomePage() {
         setStreak(s);
       }
       setLoading(false);
+      await loadUnread(user.id);
     })();
   }, [user]);
 
-  // تحديث فوري لعدد الرسائل غير المقروءة لما توصل رسالة جديدة والمستخدم فاتح الداشبورد
+  // تحديث فوري لعدد الأشخاص أصحاب الرسائل غير المقروءة
   useEffect(() => {
     if (!user) return;
+
     const channel = supabase
       .channel(`home-unread-${user.id}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${user.id}` },
-        () => setUnreadCount((c) => c + 1)
+        (payload: any) => {
+          const m = payload.new;
+          if (m.read === false) {
+            setUnreadSenderIds((prev) => new Set(prev).add(m.sender_id));
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages", filter: `recipient_id=eq.${user.id}` },
+        () => {
+          // أي تحديث على حالة القراءة (مثلاً فتح المحادثة بصفحة الشات) بنعيد حساب القائمة كاملة
+          loadUnread(user.id);
+        }
       )
       .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
     };
@@ -178,7 +211,7 @@ function TrainerHome({ userId, unreadCount }: { userId: string; unreadCount: num
         <StatCard icon={<Sparkles />} value={posts} label="منشورات" />
       </div>
 
-      <Link to="/chat" className="block relative">
+      <Link to="/chat" className="block">
         <Card className="p-5 rounded-2xl border-none shadow-soft flex items-center justify-between">
           <div>
             <div className="font-bold flex items-center gap-2">
