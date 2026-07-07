@@ -23,6 +23,7 @@ import { Route as AuthenticatedAppProfileRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAppNutritionRouteImport } from './routes/_authenticated/_app.nutrition'
 import { Route as AuthenticatedAppHomeRouteImport } from './routes/_authenticated/_app.home'
 import { Route as AuthenticatedAppChatRouteImport } from './routes/_authenticated/_app.chat'
+import { Route as AuthenticatedAppAiCoachRouteImport } from './routes/_authenticated/_app.ai-coach'
 import { Route as AuthenticatedAppUIdRouteImport } from './routes/_authenticated/_app.u.$id'
 import { Route as AuthenticatedAppTrainerIdRouteImport } from './routes/_authenticated/_app.trainer.$id'
 
@@ -99,6 +100,11 @@ const AuthenticatedAppChatRoute = AuthenticatedAppChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppAiCoachRoute = AuthenticatedAppAiCoachRouteImport.update({
+  id: '/ai-coach',
+  path: '/ai-coach',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 const AuthenticatedAppUIdRoute = AuthenticatedAppUIdRouteImport.update({
   id: '/u/$id',
   path: '/u/$id',
@@ -115,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
+  '/ai-coach': typeof AuthenticatedAppAiCoachRoute
   '/chat': typeof AuthenticatedAppChatRoute
   '/home': typeof AuthenticatedAppHomeRoute
   '/nutrition': typeof AuthenticatedAppNutritionRoute
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
+  '/ai-coach': typeof AuthenticatedAppAiCoachRoute
   '/chat': typeof AuthenticatedAppChatRoute
   '/home': typeof AuthenticatedAppHomeRoute
   '/nutrition': typeof AuthenticatedAppNutritionRoute
@@ -150,6 +158,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
   '/_authenticated/_app': typeof AuthenticatedAppRouteWithChildren
+  '/_authenticated/_app/ai-coach': typeof AuthenticatedAppAiCoachRoute
   '/_authenticated/_app/chat': typeof AuthenticatedAppChatRoute
   '/_authenticated/_app/home': typeof AuthenticatedAppHomeRoute
   '/_authenticated/_app/nutrition': typeof AuthenticatedAppNutritionRoute
@@ -168,6 +177,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/onboarding'
+    | '/ai-coach'
     | '/chat'
     | '/home'
     | '/nutrition'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/onboarding'
+    | '/ai-coach'
     | '/chat'
     | '/home'
     | '/nutrition'
@@ -202,6 +213,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/onboarding'
     | '/_authenticated/_app'
+    | '/_authenticated/_app/ai-coach'
     | '/_authenticated/_app/chat'
     | '/_authenticated/_app/home'
     | '/_authenticated/_app/nutrition'
@@ -322,6 +334,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppChatRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/_app/ai-coach': {
+      id: '/_authenticated/_app/ai-coach'
+      path: '/ai-coach'
+      fullPath: '/ai-coach'
+      preLoaderRoute: typeof AuthenticatedAppAiCoachRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/_app/u/$id': {
       id: '/_authenticated/_app/u/$id'
       path: '/u/$id'
@@ -340,6 +359,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAppRouteChildren {
+  AuthenticatedAppAiCoachRoute: typeof AuthenticatedAppAiCoachRoute
   AuthenticatedAppChatRoute: typeof AuthenticatedAppChatRoute
   AuthenticatedAppHomeRoute: typeof AuthenticatedAppHomeRoute
   AuthenticatedAppNutritionRoute: typeof AuthenticatedAppNutritionRoute
@@ -354,6 +374,7 @@ interface AuthenticatedAppRouteChildren {
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
+  AuthenticatedAppAiCoachRoute: AuthenticatedAppAiCoachRoute,
   AuthenticatedAppChatRoute: AuthenticatedAppChatRoute,
   AuthenticatedAppHomeRoute: AuthenticatedAppHomeRoute,
   AuthenticatedAppNutritionRoute: AuthenticatedAppNutritionRoute,

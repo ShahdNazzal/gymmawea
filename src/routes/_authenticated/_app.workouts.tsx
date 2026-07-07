@@ -1,5 +1,6 @@
+//C:\Users\lenovo\Downloads\jammawia-main (1)\jammawia-main\src\routes\_authenticated\_app.workouts.tsx
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -7,7 +8,10 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2, ImagePlus, ChevronDown, ChevronUp, Play, Youtube } from "lucide-react";
+import {
+  Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2,
+  ImagePlus, ChevronDown, ChevronUp, Play, Youtube, Moon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,7 +24,6 @@ export const Route = createFileRoute("/_authenticated/_app/workouts")({
 
 const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const DAYS_SHORT = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"];
-const REST_DAY_TITLE = "يوم راحة";
 
 // نستخرج معرف فيديو اليوتيوب من أي شكل رابط (watch / youtu.be / shorts / embed)
 function getYouTubeId(url?: string | null): string | null {
@@ -38,6 +41,12 @@ function getYouTubeId(url?: string | null): string | null {
   return null;
 }
 
+// خطة "أسبوع ثابت" هي الخطط الشخصية الجديدة: مصفوفة من 7 عناصر بالظبط، كل عنصر فيه day_of_week رقمي
+function isFixedWeekPlan(plan: any): boolean {
+  const days = Array.isArray(plan?.exercises) ? plan.exercises : [];
+  return days.length === 7 && days.every((d: any) => typeof d?.day_of_week === "number");
+}
+
 function WorkoutsPage() {
   const { user } = useAuth();
   const [active, setActive] = useState<any>(null);
@@ -47,9 +56,6 @@ function WorkoutsPage() {
   const [switchOpen, setSwitchOpen] = useState(false);
   const [newPlanOpen, setNewPlanOpen] = useState(false);
   const [timerOpen, setTimerOpen] = useState(false);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [schedule, setSchedule] = useState<any[]>([]);
-  const [openDayId, setOpenDayId] = useState<string | null>(null);
 
   const loadAll = async () => {
     if (!user) return;
@@ -63,8 +69,6 @@ function WorkoutsPage() {
     }
     const { data: up } = await supabase.from("workouts").select("*").eq("owner_user_id", user.id).order("created_at", { ascending: false });
     setPersonalPlans(up ?? []);
-    const { data: ws } = await supabase.from("weekly_schedules").select("*, workouts(name, image_url, exercises)").eq("user_id", user.id).order("day_of_week");
-    setSchedule(ws ?? []);
     setLoading(false);
   };
 
@@ -72,19 +76,16 @@ function WorkoutsPage() {
 
   const activePersonal = personalPlans.find((p) => p.id === active?.workout_plan_id);
   const currentType = active?.workout_plan_type;
+  const activePlan = currentType === "trainer" ? trainerPlan : currentType === "personal" ? activePersonal : null;
+  const activeSourceType: "trainer" | "personal" | null = currentType === "trainer" ? "trainer" : currentType === "personal" ? "personal" : null;
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-extrabold">تمارينك</h1>
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => setScheduleOpen(true)} className="rounded-xl">
-            <Calendar className="w-4 h-4 ml-1" /> الأسبوع
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setTimerOpen(true)} className="rounded-xl">
-            <Timer className="w-4 h-4 ml-1" /> مؤقت
-          </Button>
-        </div>
+        <Button size="sm" variant="outline" onClick={() => setTimerOpen(true)} className="rounded-xl">
+          <Timer className="w-4 h-4 ml-1" /> مؤقت
+        </Button>
       </div>
 
       <div className="glass p-3 rounded-2xl flex items-center justify-between text-sm">
@@ -98,112 +99,27 @@ function WorkoutsPage() {
 
       {loading && <Skeleton className="h-40 w-full rounded-3xl" />}
 
-      {!loading && currentType === "trainer" && trainerPlan && (
-        <PlanView plan={trainerPlan} userId={user!.id} sourceType="trainer" sourceId={trainerPlan.id} />
+      {/* جدولك الأسبوعي - المصدر الوحيد هلأ هو الخطة المعتمدة حالياً */}
+      {!loading && (
+        <Card className="p-5 rounded-3xl">
+          <div className="font-bold text-sm flex items-center gap-2 mb-3">
+            <Calendar className="w-4 h-4" /> جدولك الأسبوعي
+          </div>
+
+          {!activePlan ? (
+            <p className="text-xs text-muted-foreground text-center py-6">
+              ما في خطة نشطة حالياً — اعتمدي خطة من "خططي الشخصية" بالأسفل أو من خطط المدربات (زر تبديل) وبينعرض جدولك تلقائياً هون.
+            </p>
+          ) : (
+            <ActiveScheduleView
+              plan={activePlan}
+              userId={user!.id}
+              sourceType={activeSourceType!}
+              sourceId={activePlan.id}
+            />
+          )}
+        </Card>
       )}
-
-      {!loading && currentType === "personal" && activePersonal && (
-        <PlanView plan={activePersonal} userId={user!.id} sourceType="personal" sourceId={activePersonal.id} />
-      )}
-
-      {/* الجدول الأسبوعي - عرض تفصيلي كامل لكل يوم مع تمارين الخطة المرتبطة (اسم/مجاميع/عدات) */}
-      <Card className="p-5 rounded-3xl">
-        <div className="flex items-center justify-between mb-3">
-          <div className="font-bold text-sm flex items-center gap-2"><Calendar className="w-4 h-4" /> جدولك الأسبوعي</div>
-          <button onClick={() => setScheduleOpen(true)} className="text-xs text-primary font-semibold">تعديل</button>
-        </div>
-
-        {schedule.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-6">لسا ما عملتي جدول أسبوعي — اضغطي "تعديل" لتحديد خطتك لكل يوم</p>
-        ) : (
-          <>
-            {/* نظرة سريعة على الأسبوع كامل */}
-            <div className="grid grid-cols-7 gap-1 text-center mb-4">
-              {DAYS.map((d, i) => {
-                const item = schedule.find((s) => s.day_of_week === i);
-                const isRest = item?.title === REST_DAY_TITLE;
-                return (
-                  <div
-                    key={i}
-                    className={`p-2 rounded-xl text-[10px] ${
-                      item ? (isRest ? "bg-muted text-muted-foreground" : "gradient-primary text-primary-foreground") : "bg-muted/50"
-                    }`}
-                  >
-                    <div className="font-bold">{DAYS_SHORT[i]}</div>
-                    <div className="mt-1 truncate">{item?.title ?? "—"}</div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* تفاصيل كل يوم على حدة - قابلة للتوسيع لعرض التمارين كاملة */}
-            <div className="space-y-2">
-              {schedule
-                .slice()
-                .sort((a, b) => a.day_of_week - b.day_of_week)
-                .map((s) => {
-                  const isRest = s.title === REST_DAY_TITLE;
-                  const isOpen = openDayId === s.id;
-                  // تفاصيل خطة التمرين المرتبطة بهذا اليوم (أيام + تمارين كل يوم)
-                  const workoutDays = Array.isArray(s.workouts?.exercises) ? s.workouts.exercises : [];
-                  const hasDetails = !isRest && workoutDays.length > 0;
-
-                  return (
-                    <div key={s.id} className="rounded-2xl overflow-hidden bg-muted/50">
-                      <button
-                        type="button"
-                        disabled={!hasDetails}
-                        onClick={() => hasDetails && setOpenDayId((prev) => (prev === s.id ? null : s.id))}
-                        className="w-full flex items-center gap-2 p-3 text-right"
-                      >
-                        <div className="w-16 text-xs font-extrabold text-primary shrink-0">{DAYS[s.day_of_week]}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold truncate">{s.title}</div>
-                          {s.workouts?.name && (
-                            <div className="text-[10px] text-muted-foreground truncate">{s.workouts.name}</div>
-                          )}
-                        </div>
-                        {hasDetails && (isOpen ? (
-                          <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-                        ))}
-                      </button>
-
-                      <AnimatePresence initial={false}>
-                        {isOpen && hasDetails && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="px-3 pb-3 space-y-3 border-t border-border/50 pt-2">
-                              {workoutDays.map((wd: any, wi: number) => (
-                                <div key={wi} className="space-y-1.5">
-                                  {workoutDays.length > 1 && (
-                                    <div className="text-[11px] font-bold text-primary">{wd.name ?? `اليوم ${wd.day ?? wi + 1}`}</div>
-                                  )}
-                                  <ul className="space-y-1.5">
-                                    {(wd.items ?? []).map((ex: any, ei: number) => (
-                                      <ScheduleExerciseItem key={ei} name={ex?.name ?? `تمرين ${ei + 1}`} sets={ex?.sets} reps={ex?.reps} videoUrl={ex?.video_url} />
-                                    ))}
-                                  </ul>
-                                </div>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-            </div>
-          </>
-        )}
-      </Card>
-
 
       <div className="pt-4">
         <div className="flex items-center justify-between mb-3">
@@ -219,44 +135,51 @@ function WorkoutsPage() {
           </Card>
         )}
         <div className="grid gap-2">
-          {personalPlans.map((p) => (
-            <Card key={p.id} className="p-3 rounded-2xl flex items-center gap-3">
-              {p.image_url ? (
-                <img src={p.image_url} className="w-12 h-12 rounded-xl object-cover" />
-              ) : (
-                <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center"><Dumbbell className="w-4 h-4" /></div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm truncate">{p.name}</div>
-                <div className="text-[10px] text-muted-foreground">
-                  {(Array.isArray(p.exercises) ? p.exercises : []).length} يوم • {p.is_public ? "عام" : "خاص"}
+          {personalPlans.map((p) => {
+            const daysCount = Array.isArray(p.exercises)
+              ? isFixedWeekPlan(p)
+                ? p.exercises.filter((d: any) => !d.is_rest).length
+                : p.exercises.length
+              : 0;
+            return (
+              <Card key={p.id} className="p-3 rounded-2xl flex items-center gap-3">
+                {p.image_url ? (
+                  <img src={p.image_url} className="w-12 h-12 rounded-xl object-cover" />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center"><Dumbbell className="w-4 h-4" /></div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm truncate">{p.name}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {daysCount} يوم تمرين • {p.is_public ? "عام" : "خاص"}
+                  </div>
                 </div>
-              </div>
-              <Button
-                size="sm"
-                variant={active?.workout_plan_id === p.id ? "default" : "outline"}
-                onClick={async () => {
-                  await supabase.from("active_plan_selection").upsert({
-                    user_id: user!.id,
-                    workout_plan_type: "personal",
-                    workout_plan_id: p.id,
-                    nutrition_plan_type: active?.nutrition_plan_type,
-                    nutrition_plan_id: active?.nutrition_plan_id,
-                  });
-                  toast.success("تم تفعيل الخطة");
+                <Button
+                  size="sm"
+                  variant={active?.workout_plan_id === p.id ? "default" : "outline"}
+                  onClick={async () => {
+                    await supabase.from("active_plan_selection").upsert({
+                      user_id: user!.id,
+                      workout_plan_type: "personal",
+                      workout_plan_id: p.id,
+                      nutrition_plan_type: active?.nutrition_plan_type,
+                      nutrition_plan_id: active?.nutrition_plan_id,
+                    });
+                    toast.success("تم تفعيل الخطة، وجدولك الأسبوعي تحدّث تلقائياً");
+                    loadAll();
+                  }}
+                  className="rounded-xl"
+                >
+                  {active?.workout_plan_id === p.id ? "نشطة" : "تفعيل"}
+                </Button>
+                <button onClick={async () => {
+                  if (!confirm("حذف الخطة؟")) return;
+                  await supabase.from("workouts").delete().eq("id", p.id);
                   loadAll();
-                }}
-                className="rounded-xl"
-              >
-                {active?.workout_plan_id === p.id ? "نشطة" : "تفعيل"}
-              </Button>
-              <button onClick={async () => {
-                if (!confirm("حذف الخطة؟")) return;
-                await supabase.from("workouts").delete().eq("id", p.id);
-                loadAll();
-              }} className="p-1 text-destructive"><Trash2 className="w-4 h-4" /></button>
-            </Card>
-          ))}
+                }} className="p-1 text-destructive"><Trash2 className="w-4 h-4" /></button>
+              </Card>
+            );
+          })}
         </div>
       </div>
 
@@ -270,14 +193,6 @@ function WorkoutsPage() {
       />
       <NewPlanDialog open={newPlanOpen} onClose={() => setNewPlanOpen(false)} userId={user?.id ?? ""} onSaved={loadAll} />
       <RestTimerDialog open={timerOpen} onClose={() => setTimerOpen(false)} />
-      <WeeklyScheduleDialog
-        open={scheduleOpen}
-        onClose={() => setScheduleOpen(false)}
-        userId={user?.id ?? ""}
-        schedule={schedule}
-        allPlans={[...personalPlans, ...(trainerPlan ? [trainerPlan] : [])]}
-        onSaved={loadAll}
-      />
     </div>
   );
 }
@@ -305,115 +220,161 @@ function VideoPlayerDialog({ open, onClose, youtubeId, title }: { open: boolean;
   );
 }
 
-// عنصر تمرين صغير (يستخدم بعرض الجدول الأسبوعي) مع ثمبنيل فيديو قابل للضغط
-function ScheduleExerciseItem({ name, sets, reps, videoUrl }: { name: string; sets?: number; reps?: number; videoUrl?: string }) {
-  const [videoOpen, setVideoOpen] = useState(false);
-  const youtubeId = getYouTubeId(videoUrl);
-
-  return (
-    <li className="flex items-center justify-between bg-background rounded-xl px-3 py-2 gap-2">
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        {youtubeId && (
-          <button
-            type="button"
-            onClick={() => setVideoOpen(true)}
-            className="relative w-12 h-8 rounded-lg overflow-hidden shrink-0 border border-border"
-          >
-            <img src={`https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover" />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-              <Play className="w-3 h-3 text-white fill-white" />
-            </div>
-          </button>
-        )}
-        <span className="text-xs font-semibold truncate">{name}</span>
-      </div>
-      <span className="text-[11px] font-semibold text-muted-foreground shrink-0">{sets} مجموعات × {reps} عدات</span>
-      <VideoPlayerDialog open={videoOpen} onClose={() => setVideoOpen(false)} youtubeId={youtubeId} title={name} />
-    </li>
-  );
-}
-
-function PlanView({ plan, userId, sourceType, sourceId }: { plan: any; userId: string; sourceType: "trainer" | "personal"; sourceId: string }) {
-  const days = Array.isArray(plan.exercises) ? plan.exercises : plan.schedule ? Object.values(plan.schedule) : [];
-  return (
-    <div className="space-y-4">
-      <Card className="rounded-3xl border-none shadow-soft overflow-hidden">
-        {plan.image_url && <img src={plan.image_url} className="w-full h-40 object-cover" />}
-        <div className="p-5 gradient-blush">
-          <div className="text-xs text-muted-foreground mb-1">البرنامج الحالي</div>
-          <h2 className="text-xl font-extrabold">{plan.name}</h2>
-          {plan.description && <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>}
-        </div>
-      </Card>
-      {days.map((d: any, i: number) => (
-        <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-          <Card className="p-4 rounded-2xl">
-            <div className="font-bold mb-3">{d.name ?? `اليوم ${d.day ?? i + 1}`}</div>
-            <ul className="space-y-2">
-              {(d.items ?? []).map((ex: any, j: number) => (
-                <ExerciseRow
-                  key={j}
-                  name={ex.name}
-                  sets={ex.sets}
-                  reps={ex.reps}
-                  videoUrl={ex.video_url}
-                  userId={userId}
-                  sourceType={sourceType}
-                  sourceId={sourceId}
-                />
-              ))}
-            </ul>
-          </Card>
-        </motion.div>
-      ))}
-    </div>
-  );
-}
-
-function ExerciseRow({ name, sets, reps, videoUrl, userId, sourceType, sourceId }: any) {
+// عنصر تمرين واحد: فيديو + اسم + شرح أداء + نصيحة + زر تسجيل الإنجاز
+function ExerciseRow({ name, sets, reps, videoUrl, instruction, tips, userId, sourceType, sourceId }: any) {
   const [done, setDone] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
   const youtubeId = getYouTubeId(videoUrl);
 
   return (
-    <li className="flex items-center justify-between p-2 rounded-xl hover:bg-muted/50 gap-2">
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        <button
-          onClick={async () => {
-            await supabase.from("workout_logs").insert({
-              user_id: userId,
-              source_type: sourceType,
-              source_id: sourceId,
-              exercise_name: name,
-              sets, reps,
-            });
-            setDone(true);
-            toast.success("تم تسجيل التمرين");
-          }}
-          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition ${done ? "gradient-primary border-primary" : "border-border"}`}
-        >
-          {done && <CheckCircle2 className="w-4 h-4 text-primary-foreground" />}
-        </button>
-
-        {youtubeId && (
+    <li className="p-2.5 rounded-xl hover:bg-muted/50">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <button
-            type="button"
-            onClick={() => setVideoOpen(true)}
-            className="relative w-14 h-9 rounded-lg overflow-hidden shrink-0 border border-border"
+            onClick={async () => {
+              await supabase.from("workout_logs").insert({
+                user_id: userId,
+                source_type: sourceType,
+                source_id: sourceId,
+                exercise_name: name,
+                sets, reps,
+              });
+              setDone(true);
+              toast.success("تم تسجيل التمرين");
+            }}
+            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition ${done ? "gradient-primary border-primary" : "border-border"}`}
           >
-            <img src={`https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover" />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-              <Play className="w-3.5 h-3.5 text-white fill-white" />
-            </div>
+            {done && <CheckCircle2 className="w-4 h-4 text-primary-foreground" />}
           </button>
-        )}
 
-        <span className={`text-sm truncate ${done ? "line-through text-muted-foreground" : ""}`}>{name}</span>
+          {youtubeId && (
+            <button
+              type="button"
+              onClick={() => setVideoOpen(true)}
+              className="relative w-14 h-9 rounded-lg overflow-hidden shrink-0 border border-border"
+            >
+              <img src={`https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                <Play className="w-3.5 h-3.5 text-white fill-white" />
+              </div>
+            </button>
+          )}
+
+          <span className={`text-sm font-semibold truncate ${done ? "line-through text-muted-foreground" : ""}`}>{name}</span>
+        </div>
+        <span className="text-xs font-semibold text-muted-foreground shrink-0">{sets} × {reps}</span>
       </div>
-      <span className="text-xs font-semibold text-muted-foreground shrink-0">{sets} × {reps}</span>
+
+      {(instruction || tips) && (
+        <div className="mt-1.5 pr-8 space-y-1">
+          {instruction && <p className="text-[11px] text-muted-foreground leading-relaxed">{instruction}</p>}
+          {tips && <p className="text-[11px] text-primary leading-relaxed">💡 {tips}</p>}
+        </div>
+      )}
 
       <VideoPlayerDialog open={videoOpen} onClose={() => setVideoOpen(false)} youtubeId={youtubeId} title={name} />
     </li>
+  );
+}
+
+// عرض الجدول الأسبوعي بالاعتماد الكامل على الخطة النشطة حالياً (شخصية أو مدربة)
+function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any; userId: string; sourceType: "trainer" | "personal"; sourceId: string }) {
+  const fixedWeek = isFixedWeekPlan(plan);
+  const rawDays: any[] = Array.isArray(plan.exercises) ? plan.exercises : [];
+  const days = fixedWeek ? [...rawDays].sort((a, b) => a.day_of_week - b.day_of_week) : rawDays;
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl overflow-hidden">
+        {plan.image_url && <img src={plan.image_url} className="w-full h-32 object-cover" />}
+        <div className="p-3 gradient-blush rounded-b-2xl">
+          <div className="font-extrabold">{plan.name}</div>
+          {plan.description && <p className="text-xs text-muted-foreground mt-1">{plan.description}</p>}
+        </div>
+      </div>
+
+      {/* نظرة سريعة على أيام الأسبوع، فقط للخطط ذات البنية الثابتة (أحد → سبت) */}
+      {fixedWeek && (
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {days.map((d: any, i: number) => (
+            <div
+              key={i}
+              className={`p-2 rounded-xl text-[10px] ${d.is_rest ? "bg-muted text-muted-foreground" : "gradient-primary text-primary-foreground"}`}
+            >
+              <div className="font-bold">{DAYS_SHORT[d.day_of_week]}</div>
+              <div className="mt-1 truncate">{d.is_rest ? "راحة" : `${(d.items ?? []).length} تمارين`}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {days.map((d: any, i: number) => {
+          const isRest = !!d.is_rest;
+          const items = Array.isArray(d.items) ? d.items : [];
+          const isOpen = openIdx === i;
+          const label = fixedWeek ? DAYS[d.day_of_week] : (d.name ?? `اليوم ${i + 1}`);
+
+          return (
+            <div key={i} className="rounded-2xl overflow-hidden bg-muted/50">
+              <button
+                type="button"
+                disabled={isRest && items.length === 0}
+                onClick={() => setOpenIdx((prev) => (prev === i ? null : i))}
+                className="w-full flex items-center gap-2 p-3 text-right"
+              >
+                {isRest ? (
+                  <Moon className="w-4 h-4 text-muted-foreground shrink-0" />
+                ) : (
+                  <Dumbbell className="w-4 h-4 text-primary shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{label}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    {isRest ? "يوم راحة" : `${items.length} تمارين`}
+                  </div>
+                </div>
+                {!isRest && items.length > 0 && (isOpen ? (
+                  <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                ))}
+              </button>
+
+              <AnimatePresence initial={false}>
+                {isOpen && !isRest && items.length > 0 && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <ul className="px-2 pb-2 space-y-1 border-t border-border/50 pt-2">
+                      {items.map((ex: any, ei: number) => (
+                        <ExerciseRow
+                          key={ei}
+                          name={ex?.name ?? `تمرين ${ei + 1}`}
+                          sets={ex?.sets}
+                          reps={ex?.reps}
+                          videoUrl={ex?.video_url}
+                          instruction={ex?.instruction}
+                          tips={ex?.tips}
+                          userId={userId}
+                          sourceType={sourceType}
+                          sourceId={sourceId}
+                        />
+                      ))}
+                    </ul>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -426,7 +387,7 @@ function SwitchDialog({ open, onClose, userId, activeId, onSwitched, currentSele
     supabase
       .from("workouts")
       .select("*, profiles!workouts_trainer_id_fkey(full_name)")
-      .select("*").eq("is_public", true)
+      .eq("is_public", true)
       .order("created_at", { ascending: false })
       .then(({ data }) => { setPlans(data ?? []); setLoading(false); });
   }, [open]);
@@ -439,7 +400,7 @@ function SwitchDialog({ open, onClose, userId, activeId, onSwitched, currentSele
       nutrition_plan_type: currentSelection?.nutrition_plan_type,
       nutrition_plan_id: currentSelection?.nutrition_plan_id,
     });
-    toast.success("تم اعتماد الخطة");
+    toast.success("تم اعتماد الخطة، وجدولك الأسبوعي تحدّث تلقائياً");
     onSwitched();
   };
 
@@ -447,7 +408,7 @@ function SwitchDialog({ open, onClose, userId, activeId, onSwitched, currentSele
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="rounded-3xl max-h-[80vh] overflow-y-auto">
         <DialogHeader><DialogTitle>خطط المدربات</DialogTitle></DialogHeader>
-        <p className="text-xs text-muted-foreground">اختاري خطة من المدربات لاعتمادها كبرنامجك الحالي.</p>
+        <p className="text-xs text-muted-foreground">اختاري خطة من المدربات لاعتمادها كبرنامجك الحالي، ورح تظهر جاهزة مقسّمة بالأيام بجدولك الأسبوعي.</p>
         {loading && <Skeleton className="h-24 rounded-2xl" />}
         {!loading && plans.length === 0 && (
           <Card className="p-6 text-center rounded-2xl border-dashed">
@@ -481,22 +442,56 @@ function SwitchDialog({ open, onClose, userId, activeId, onSwitched, currentSele
   );
 }
 
+type NewPlanExercise = { name: string; sets: number; reps: number; video_url: string; instruction: string; tips: string };
+type NewPlanDay = { day_of_week: number; is_rest: boolean; items: NewPlanExercise[] };
+
+function emptyExercise(): NewPlanExercise {
+  return { name: "", sets: 3, reps: 12, video_url: "", instruction: "", tips: "" };
+}
+
+function defaultDays(): NewPlanDay[] {
+  return DAYS.map((_, i) => ({ day_of_week: i, is_rest: true, items: [] }));
+}
 
 function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [exercises, setExercises] = useState<any[]>([{ name: "", sets: 3, reps: 12, video_url: "" }]);
+  const [days, setDays] = useState<NewPlanDay[]>(defaultDays());
   const [saving, setSaving] = useState(false);
+
+  const reset = () => {
+    setName(""); setDescription(""); setIsPublic(false); setImageFile(null);
+    setDays(defaultDays());
+  };
+
+  const updateDay = (idx: number, patch: Partial<NewPlanDay>) => {
+    setDays((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)));
+  };
+
+  const updateExercise = (dayIdx: number, exIdx: number, patch: Partial<NewPlanExercise>) => {
+    setDays((prev) =>
+      prev.map((d, i) => {
+        if (i !== dayIdx) return d;
+        const items = d.items.map((ex, j) => (j === exIdx ? { ...ex, ...patch } : ex));
+        return { ...d, items };
+      })
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="rounded-3xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="rounded-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>خطة تمرين شخصية</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div>
             <Label>اسم الخطة</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="rounded-xl mt-1" />
+          </div>
+          <div>
+            <Label>وصف مختصر (اختياري)</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} className="rounded-xl mt-1" />
           </div>
           <div>
             <Label className="text-xs flex items-center gap-2"><ImagePlus className="w-4 h-4" /> صورة الخطة (اختياري)</Label>
@@ -506,41 +501,122 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
             <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="w-4 h-4" />
             جعل الخطة عامة (يستطيع الآخرون رؤيتها في ملفك)
           </label>
-          <div>
-            <Label>تمارين اليوم 1</Label>
-            <div className="space-y-2 mt-2">
-              {exercises.map((ex, i) => (
-                <div key={i} className="rounded-xl border border-border p-2 space-y-2">
-                  <div className="grid grid-cols-[1fr_60px_60px_auto] gap-2 items-center">
-                    <Input value={ex.name} onChange={(e) => { const c = [...exercises]; c[i].name = e.target.value; setExercises(c); }} placeholder="اسم التمرين" className="rounded-xl" />
-                    <Input type="number" value={ex.sets} onChange={(e) => { const c = [...exercises]; c[i].sets = +e.target.value; setExercises(c); }} className="rounded-xl text-center" />
-                    <Input type="number" value={ex.reps} onChange={(e) => { const c = [...exercises]; c[i].reps = +e.target.value; setExercises(c); }} className="rounded-xl text-center" />
-                    <button onClick={() => setExercises(exercises.filter((_, j) => j !== i))} className="p-1"><X className="w-4 h-4" /></button>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Youtube className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <Input
-                      value={ex.video_url ?? ""}
-                      onChange={(e) => { const c = [...exercises]; c[i].video_url = e.target.value; setExercises(c); }}
-                      placeholder="رابط فيديو يوتيوب لشرح التمرين (اختياري)"
-                      className="rounded-xl h-8 text-xs"
+
+          <div className="space-y-3">
+            <Label>أيام الأسبوع</Label>
+            {days.map((d, di) => (
+              <Card key={di} className="p-3 rounded-2xl">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-bold text-sm">{DAYS[d.day_of_week]}</div>
+                  <label className="flex items-center gap-2 text-xs font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={d.is_rest}
+                      onChange={(e) => updateDay(di, { is_rest: e.target.checked, items: e.target.checked ? [] : d.items })}
+                      className="w-4 h-4"
                     />
-                  </div>
+                    يوم راحة
+                  </label>
                 </div>
-              ))}
-              <Button size="sm" variant="outline" onClick={() => setExercises([...exercises, { name: "", sets: 3, reps: 12, video_url: "" }])} className="rounded-xl w-full">
-                <Plus className="w-4 h-4 ml-1" /> إضافة تمرين
-              </Button>
-            </div>
+
+                {!d.is_rest && (
+                  <div className="space-y-2">
+                    {d.items.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground">ما في تمارين بعد لهاد اليوم</p>
+                    )}
+                    {d.items.map((ex, ei) => (
+                      <div key={ei} className="rounded-xl border border-border p-2 space-y-2">
+                        <div className="grid grid-cols-[1fr_50px_50px_auto] gap-2 items-center">
+                          <Input
+                            value={ex.name}
+                            onChange={(e) => updateExercise(di, ei, { name: e.target.value })}
+                            placeholder="اسم التمرين"
+                            className="rounded-xl h-9"
+                          />
+                          <Input
+                            type="number"
+                            value={ex.sets}
+                            onChange={(e) => updateExercise(di, ei, { sets: +e.target.value })}
+                            className="rounded-xl h-9 text-center"
+                          />
+                          <Input
+                            type="number"
+                            value={ex.reps}
+                            onChange={(e) => updateExercise(di, ei, { reps: +e.target.value })}
+                            className="rounded-xl h-9 text-center"
+                          />
+                          <button
+                            onClick={() => updateDay(di, { items: d.items.filter((_, j) => j !== ei) })}
+                            className="p-1"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Youtube className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <Input
+                            value={ex.video_url}
+                            onChange={(e) => updateExercise(di, ei, { video_url: e.target.value })}
+                            placeholder="رابط فيديو يوتيوب (اختياري)"
+                            className="rounded-xl h-8 text-xs"
+                          />
+                        </div>
+                        <Input
+                          value={ex.instruction}
+                          onChange={(e) => updateExercise(di, ei, { instruction: e.target.value })}
+                          placeholder="شرح طريقة الأداء (اختياري)"
+                          className="rounded-xl h-8 text-xs"
+                        />
+                        <Input
+                          value={ex.tips}
+                          onChange={(e) => updateExercise(di, ei, { tips: e.target.value })}
+                          placeholder="نصيحة سريعة (اختياري)"
+                          className="rounded-xl h-8 text-xs"
+                        />
+                      </div>
+                    ))}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateDay(di, { items: [...d.items, emptyExercise()] })}
+                      className="rounded-xl w-full"
+                    >
+                      <Plus className="w-4 h-4 ml-1" /> إضافة تمرين
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            ))}
           </div>
+
           <Button
             disabled={saving}
             onClick={async () => {
               if (!name.trim()) return toast.error("اكتبي اسم الخطة");
-              const items = exercises
-                .filter((e) => e.name?.trim())
-                .map((e) => ({ name: e.name, sets: e.sets, reps: e.reps, video_url: e.video_url?.trim() || null }));
-              if (items.length === 0) return toast.error("أضيفي تمريناً واحداً على الأقل");
+
+              const cleanedDays = days.map((d) => {
+                const items = d.items
+                  .filter((ex) => ex.name?.trim())
+                  .map((ex) => ({
+                    name: ex.name.trim(),
+                    sets: ex.sets,
+                    reps: ex.reps,
+                    video_url: ex.video_url?.trim() || null,
+                    instruction: ex.instruction?.trim() || null,
+                    tips: ex.tips?.trim() || null,
+                  }));
+                const isRest = d.is_rest || items.length === 0;
+                return {
+                  day_of_week: d.day_of_week,
+                  name: DAYS[d.day_of_week],
+                  is_rest: isRest,
+                  items: isRest ? [] : items,
+                };
+              });
+
+              const hasAnyTraining = cleanedDays.some((d) => !d.is_rest);
+              if (!hasAnyTraining) return toast.error("أضيفي تمريناً واحداً على الأقل بيوم واحد على الأقل");
+
               setSaving(true);
               try {
                 let image_url: string | null = null;
@@ -548,18 +624,18 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
                 const { error } = await supabase.from("workouts").insert({
                   owner_user_id: userId,
                   name,
+                  description: description || null,
                   goal: "fitness",
                   activity_level: "moderate",
                   equipment: "home",
-                  min_frequency: 3,
-                  exercises: [{ name: "اليوم 1", items }],
+                  min_frequency: cleanedDays.filter((d) => !d.is_rest).length,
+                  exercises: cleanedDays,
                   is_public: isPublic,
                   image_url,
                 });
                 if (error) throw error;
                 toast.success("تم الحفظ");
-                setName(""); setImageFile(null); setIsPublic(false);
-                setExercises([{ name: "", sets: 3, reps: 12, video_url: "" }]);
+                reset();
                 onClose(); onSaved();
               } catch (err: any) { toast.error(err.message); }
               finally { setSaving(false); }
@@ -577,12 +653,51 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
 function RestTimerDialog({ open, onClose }: any) {
   const [sec, setSec] = useState(60);
   const [running, setRunning] = useState(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
   useEffect(() => {
     if (!running || sec <= 0) return;
     const t = setInterval(() => setSec((s) => s - 1), 1000);
     return () => clearInterval(t);
   }, [running, sec]);
-  useEffect(() => { if (sec === 0 && running) { setRunning(false); toast.success("انتهى وقت الراحة"); } }, [sec, running]);
+
+  // صوت تنبيه حقيقي (3 نغمات قصيرة) لما ينتهي الوقت، بدون أي ملف صوتي خارجي
+  const playBeep = () => {
+    try {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
+
+      const beepCount = 3;
+      for (let i = 0; i < beepCount; i++) {
+        const startAt = ctx.currentTime + i * 0.35;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(0.4, startAt + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startAt);
+        osc.stop(startAt + 0.3);
+      }
+    } catch {
+      // تجاهل أي مشكلة بتشغيل الصوت (مثلاً متصفح ما بيدعمه)
+    }
+  };
+
+  useEffect(() => {
+    if (sec === 0 && running) {
+      setRunning(false);
+      playBeep();
+      toast.success("انتهى وقت الراحة");
+    }
+  }, [sec, running]);
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="rounded-3xl text-center">
@@ -595,83 +710,6 @@ function RestTimerDialog({ open, onClose }: any) {
         </div>
         <Button onClick={() => setRunning(!running)} className="rounded-2xl gradient-primary">
           {running ? "إيقاف" : "ابدئي"}
-        </Button>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function WeeklyScheduleDialog({ open, onClose, userId, schedule, allPlans, onSaved }: any) {
-  const [local, setLocal] = useState<Record<number, { title: string; workout_id: string | null }>>({});
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    const map: any = {};
-    for (const s of schedule) map[s.day_of_week] = { title: s.title, workout_id: s.workout_id };
-    setLocal(map);
-  }, [open, schedule]);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      // نبني صف لكل الأيام السبعة، وإذا اليوم فاضي (بدون عنوان) نعتبره تلقائياً "يوم راحة"
-      const rows = DAYS.map((_, day) => {
-        const entry = local[day];
-        const title = entry?.title?.trim();
-        return {
-          user_id: userId,
-          day_of_week: day,
-          title: title ? title : REST_DAY_TITLE,
-          workout_id: title ? entry?.workout_id ?? null : null,
-        };
-      });
-
-      const { error: delError } = await supabase.from("weekly_schedules").delete().eq("user_id", userId);
-      if (delError) throw delError;
-
-      const { error: insError } = await supabase.from("weekly_schedules").insert(rows);
-      if (insError) throw insError;
-
-      toast.success("تم حفظ الجدول");
-      onClose(); onSaved();
-    } catch (err: any) {
-      toast.error(err.message ?? "تعذر حفظ الجدول");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="rounded-3xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>الجدول الأسبوعي</DialogTitle></DialogHeader>
-        <p className="text-xs text-muted-foreground -mt-2">اتركي اليوم فاضي إذا كان يوم راحة — رح ينحفظ تلقائياً كذلك.</p>
-        <div className="space-y-2">
-          {DAYS.map((d, i) => (
-            <div key={i} className="grid grid-cols-[80px_1fr] gap-2 items-center">
-              <div className="text-sm font-semibold">{d}</div>
-              <div className="grid gap-1">
-                <Input
-                  placeholder="مثال: تمرين صدر (اتركيه فاضي = يوم راحة)"
-                  value={local[i]?.title ?? ""}
-                  onChange={(e) => setLocal({ ...local, [i]: { title: e.target.value, workout_id: local[i]?.workout_id ?? null } })}
-                  className="rounded-xl h-9"
-                />
-                <select
-                  value={local[i]?.workout_id ?? ""}
-                  onChange={(e) => setLocal({ ...local, [i]: { title: local[i]?.title ?? "", workout_id: e.target.value || null } })}
-                  className="rounded-xl h-9 border border-input bg-background px-2 text-xs"
-                >
-                  <option value="">— بدون خطة —</option>
-                  {allPlans.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-            </div>
-          ))}
-        </div>
-        <Button disabled={saving} onClick={save} className="w-full rounded-2xl gradient-primary">
-          {saving ? "جاري الحفظ..." : "حفظ الجدول"}
         </Button>
       </DialogContent>
     </Dialog>
