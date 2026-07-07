@@ -11,7 +11,7 @@ const baseItems = [
   { to: "/workouts", label: "تمارين", icon: Dumbbell },
 
   // 👇👇👇 هذا هو الشاتبوت
-  { to: "/ai-coach", label: "المدرب AI", icon: Bot },
+  { to: "/ai-coach", label: "AIVA", icon: Bot },
 
   { to: "/nutrition", label: "تغذيتي", icon: Apple },
   { to: "/trainers", label: "مدربات", icon: Users },
