@@ -1,3 +1,4 @@
+//C:\Users\lenovo\Downloads\jammawia-main (1)\jammawia-main\src\routes\_authenticated\_app.profile.tsx
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,6 +23,66 @@ export const Route = createFileRoute("/_authenticated/_app/profile")({
 
 const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
+// خطة "أسبوع ثابت" (خطط شخصية أنشأناها من صفحة التمارين): مصفوفة 7 عناصر بالظبط، كل عنصر فيه day_of_week رقمي
+function isFixedWeekPlan(plan: any): boolean {
+  const days = Array.isArray(plan?.exercises) ? plan.exercises : [];
+  return days.length === 7 && days.every((d: any) => typeof d?.day_of_week === "number");
+}
+
+// نحاول نطابق اسم اليوم (زي "الأحد - صدر وترايسبس") مع أحد أيام الأسبوع، ونستخرج اسم العضلة المستهدفة بعد الفاصل
+function parseDayName(dayName: string): { dayIndex: number | null; muscle: string } {
+  const trimmed = (dayName ?? "").trim();
+  for (let i = 0; i < DAYS.length; i++) {
+    if (trimmed.startsWith(DAYS[i])) {
+      const rest = trimmed.slice(DAYS[i].length).replace(/^[\s-–—:]+/, "").trim();
+      return { dayIndex: i, muscle: rest };
+    }
+  }
+  return { dayIndex: null, muscle: trimmed };
+}
+
+type WeekSlot = { label: string; isRest: boolean; subtitle?: string };
+
+// نبني عرض 7 أيام من الخطة المعتمدة حالياً، بغض النظر عن نوعها
+function buildWeekSlots(plan: any): WeekSlot[] {
+  if (!plan) return DAYS.map((label) => ({ label, isRest: true }));
+
+  const rawDays: any[] = Array.isArray(plan.exercises) ? plan.exercises : [];
+
+  // حالة 1: خطة شخصية بأيام ثابتة (day_of_week رقمي) — منشأة من صفحة التمارين
+  if (isFixedWeekPlan(plan)) {
+    const sorted = [...rawDays].sort((a, b) => a.day_of_week - b.day_of_week);
+    return sorted.map((d) => {
+      const itemsCount = Array.isArray(d.items) ? d.items.length : 0;
+      return {
+        label: DAYS[d.day_of_week],
+        isRest: !!d.is_rest || itemsCount === 0,
+        subtitle: !d.is_rest && itemsCount > 0 ? `${itemsCount} تمارين` : undefined,
+      };
+    });
+  }
+
+  // حالة 2: خطة بأيام حرة (مدربة / شاتبوت)، أسماء الأيام فيها قد تحوي اسم اليوم الحقيقي + العضلة المستهدفة
+  const parsed = rawDays.map((d: any) => ({ ...parseDayName(String(d?.name ?? "")), raw: d }));
+  const anyMatchedByName = parsed.some((p) => p.dayIndex !== null);
+
+  if (anyMatchedByName) {
+    return DAYS.map((label, i) => {
+      const match = parsed.find((p) => p.dayIndex === i);
+      if (!match) return { label, isRest: true };
+      return { label, isRest: false, subtitle: match.muscle || plan.name };
+    });
+  }
+
+  // حالة 3: ما في تطابق اسمي إطلاقاً (مثلاً "اليوم 1"، "اليوم 2") — نعرضها بترتيبها بدءاً من الأحد
+  return DAYS.map((label, i) => {
+    const d = rawDays[i];
+    if (!d) return { label, isRest: true };
+    const dayLabel = typeof d?.name === "string" && d.name.trim() ? d.name.trim() : plan.name;
+    return { label, isRest: false, subtitle: dayLabel };
+  });
+}
+
 function ProfilePage() {
   const { user, role, signOut } = useAuth();
   const navigate = useNavigate();
@@ -31,20 +92,26 @@ function ProfilePage() {
   const [addOpen, setAddOpen] = useState(false);
   const [newPostOpen, setNewPostOpen] = useState(false);
   const [posts, setPosts] = useState<any[]>([]);
-  const [schedule, setSchedule] = useState<any[]>([]);
+  const [activePlan, setActivePlan] = useState<any>(null);
   const [openPost, setOpenPost] = useState<any>(null);
   const avatarInput = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     if (!user) return;
-    const [{ data: p }, { data: f }, { data: pr }, { data: ps }, { data: ws }] = await Promise.all([
+    const [{ data: p }, { data: f }, { data: pr }, { data: ps }, { data: sel }] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
       supabase.from("user_fitness_profile").select("*").eq("user_id", user.id).maybeSingle(),
       supabase.from("progress_logs").select("*").eq("user_id", user.id).order("logged_at"),
       supabase.from("posts").select("*").eq("author_id", user.id).order("created_at", { ascending: false }),
-      supabase.from("weekly_schedules").select("*, workouts(name, image_url)").eq("user_id", user.id).order("day_of_week"),
+      supabase.from("active_plan_selection").select("*").eq("user_id", user.id).maybeSingle(),
     ]);
-    setProfile(p); setFp(f); setProgress(pr ?? []); setPosts(ps ?? []); setSchedule(ws ?? []);
+    setProfile(p); setFp(f); setProgress(pr ?? []); setPosts(ps ?? []);
+
+    setActivePlan(null);
+    if (sel?.workout_plan_type && sel?.workout_plan_id) {
+      const { data: w } = await supabase.from("workouts").select("*").eq("id", sel.workout_plan_id).maybeSingle();
+      setActivePlan(w ?? null);
+    }
   };
   useEffect(() => { load(); }, [user, role]);
 
@@ -63,6 +130,9 @@ function ProfilePage() {
 
   const imagePosts = posts.filter((p) => !!p.image_url);
   const textPosts = posts.filter((p) => !p.image_url);
+
+  const weekSlots = buildWeekSlots(activePlan);
+  const scheduledDaysCount = weekSlots.filter((s) => !s.isRest).length;
 
   return (
     <div className="space-y-5">
@@ -108,7 +178,7 @@ function ProfilePage() {
               <div className="text-[11px] text-muted-foreground">منشور</div>
             </div>
             <div className="text-center">
-              <div className="font-extrabold text-lg">{schedule.length}</div>
+              <div className="font-extrabold text-lg">{scheduledDaysCount}</div>
               <div className="text-[11px] text-muted-foreground">أيام مجدولة</div>
             </div>
             {role === "user" && fp && (
@@ -158,84 +228,42 @@ function ProfilePage() {
         </>
       )}
 
-      
-      
+      {/* الجدول الأسبوعي - المصدر الوحيد هلأ هو الخطة المعتمدة حالياً */}
+      <Card className="p-5 rounded-3xl">
+        <div className="flex items-center justify-between mb-5">
+          <div className="font-bold text-sm flex items-center gap-2">
+            <Calendar className="w-4 h-4" /> جدولي الأسبوعي
+          </div>
+          <Link to="/workouts" className="text-xs text-primary font-semibold">
+            تعديل
+          </Link>
+        </div>
 
-      {/* الجدول الأسبوعي */}
-<Card className="p-5 rounded-3xl">
-  <div className="flex items-center justify-between mb-5">
-    <div className="font-bold text-sm flex items-center gap-2">
-      <Calendar className="w-4 h-4" /> جدولي الأسبوعي
-    </div>
-    <Link to="/workouts" className="text-xs text-primary font-semibold">
-      تعديل
-    </Link>
-  </div>
-
-  {schedule.length === 0 ? (
-    <p className="text-xs text-muted-foreground text-center py-8">
-      لسا ما عملتي جدول أسبوعي
-    </p>
-  ) : (
-    <div className="relative">
-      {/* الخط الخلفي */}
-      <div className="absolute top-6 left-0 right-0 h-[2px] bg-border z-0" />
-
-      <div className="flex justify-between gap-2 relative z-10">
-        {DAYS.map((d, i) => {
-          const item = schedule.find((s) => s.day_of_week === i);
-          const isToday = new Date().getDay() === i;
-
-          return (
-            <div key={i} className="flex flex-col items-center flex-1">
-              {/* الدائرة */}
-<div
-  className={`w-14 h-14 flex items-center justify-center rounded-full text-[10px] font-bold text-center leading-tight px-1
-  ${
-    item
-      ? "gradient-primary text-white"
-      : "bg-muted text-muted-foreground"
-  }
-  ${isToday ? "ring-2 ring-primary scale-110" : ""}
-`}
->
-  {d}
-</div>
-
-
-               
-              {/* الكرت */}
-              <div
-                className={`mt-3 w-full text-center px-2 py-2 rounded-xl text-[11px] leading-tight
-                ${
-                  item
-                    ? "bg-primary/10 text-primary font-semibold"
-                    : "text-muted-foreground"
-                }`}
-              >
-                {item ? (
-                  <>
-                    <div className="font-bold truncate">
-                      {item.title}
-                    </div>
-                    {item.workouts?.name && (
-                      <div className="text-[10px] opacity-80 truncate">
-                        {item.workouts.name}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  "راحة"
-                )}
+        {!activePlan ? (
+          <p className="text-xs text-muted-foreground text-center py-8">
+            ما في خطة معتمدة حالياً — اعتمدي خطة من صفحة التمارين ليظهر جدولك هون تلقائياً
+          </p>
+        ) : (
+          <>
+            {/* عرض اللابتوب/الشاشات الكبيرة: صف واحد أفقي كامل، بنفس التصميم الأصلي */}
+            <div className="hidden sm:block relative">
+              <div className="absolute top-6 left-0 right-0 h-[2px] bg-border z-0" />
+              <div className="flex justify-between gap-2 relative z-10">
+                {weekSlots.map((slot, i) => (
+                  <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
+                ))}
               </div>
             </div>
-          );
-        })}
-      </div>
-    </div>
-  )}
-</Card>
 
+            {/* عرض الموبايل: صفين (4 + 3) لأنه الشاشة عمودية الشكل */}
+            <div className="sm:hidden grid grid-cols-4 gap-3">
+              {weekSlots.map((slot, i) => (
+                <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
 
       {/* لايتبوكس بسيط لعرض المنشور موسّعاً */}
       <AnimatePresence>
@@ -276,6 +304,28 @@ function ProfilePage() {
 
       <AddWeightDialog open={addOpen} onClose={() => setAddOpen(false)} userId={user?.id ?? ""} onSaved={load} />
       <NewPostDialog open={newPostOpen} onClose={() => setNewPostOpen(false)} userId={user?.id ?? ""} onSaved={load} />
+    </div>
+  );
+}
+
+function WeekDayCell({ slot, isToday }: { slot: WeekSlot; isToday: boolean }) {
+  return (
+    <div className="flex flex-col items-center flex-1">
+      <div
+        className={`w-14 h-14 flex items-center justify-center rounded-full text-[10px] font-bold text-center leading-tight px-1
+        ${slot.isRest ? "bg-muted text-muted-foreground" : "gradient-primary text-white"}
+        ${isToday ? "ring-2 ring-primary scale-110" : ""}
+      `}
+      >
+        {slot.label}
+      </div>
+
+      <div
+        className={`mt-3 w-full text-center px-2 py-2 rounded-xl text-[11px] leading-tight
+        ${slot.isRest ? "text-muted-foreground" : "bg-primary/10 text-primary font-semibold"}`}
+      >
+        {slot.isRest ? "راحة" : (slot.subtitle ?? "تمرين")}
+      </div>
     </div>
   );
 }
