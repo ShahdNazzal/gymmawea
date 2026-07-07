@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2, ImagePlus, ChevronDown, ChevronUp } from "lucide-react";
+import { Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2, ImagePlus, ChevronDown, ChevronUp, Play, Youtube } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,6 +21,22 @@ export const Route = createFileRoute("/_authenticated/_app/workouts")({
 const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const DAYS_SHORT = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"];
 const REST_DAY_TITLE = "يوم راحة";
+
+// نستخرج معرف فيديو اليوتيوب من أي شكل رابط (watch / youtu.be / shorts / embed)
+function getYouTubeId(url?: string | null): string | null {
+  if (!url) return null;
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{6,})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
 
 function WorkoutsPage() {
   const { user } = useAuth();
@@ -90,9 +106,6 @@ function WorkoutsPage() {
         <PlanView plan={activePersonal} userId={user!.id} sourceType="personal" sourceId={activePersonal.id} />
       )}
 
-
-
-   
       {/* الجدول الأسبوعي - عرض تفصيلي كامل لكل يوم مع تمارين الخطة المرتبطة (اسم/مجاميع/عدات) */}
       <Card className="p-5 rounded-3xl">
         <div className="flex items-center justify-between mb-3">
@@ -174,10 +187,7 @@ function WorkoutsPage() {
                                   )}
                                   <ul className="space-y-1.5">
                                     {(wd.items ?? []).map((ex: any, ei: number) => (
-                                      <li key={ei} className="flex items-center justify-between bg-background rounded-xl px-3 py-2">
-                                        <span className="text-xs font-semibold">{ex?.name ?? `تمرين ${ei + 1}`}</span>
-                                        <span className="text-[11px] font-semibold text-muted-foreground shrink-0">{ex?.sets} مجموعات × {ex?.reps} عدات</span>
-                                      </li>
+                                      <ScheduleExerciseItem key={ei} name={ex?.name ?? `تمرين ${ei + 1}`} sets={ex?.sets} reps={ex?.reps} videoUrl={ex?.video_url} />
                                     ))}
                                   </ul>
                                 </div>
@@ -272,6 +282,57 @@ function WorkoutsPage() {
   );
 }
 
+// ديالوج مشغّل الفيديو، مشترك بين كل الأماكن اللي بتعرض فيديو تمرين
+function VideoPlayerDialog({ open, onClose, youtubeId, title }: { open: boolean; onClose: () => void; youtubeId: string | null; title: string }) {
+  if (!youtubeId) return null;
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="rounded-3xl max-w-lg p-0 overflow-hidden">
+        <div className="w-full aspect-video bg-black">
+          <iframe
+            className="w-full h-full"
+            src={`https://www.youtube.com/embed/${youtubeId}`}
+            title={title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+        <div className="p-4">
+          <div className="font-bold text-sm">{title}</div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// عنصر تمرين صغير (يستخدم بعرض الجدول الأسبوعي) مع ثمبنيل فيديو قابل للضغط
+function ScheduleExerciseItem({ name, sets, reps, videoUrl }: { name: string; sets?: number; reps?: number; videoUrl?: string }) {
+  const [videoOpen, setVideoOpen] = useState(false);
+  const youtubeId = getYouTubeId(videoUrl);
+
+  return (
+    <li className="flex items-center justify-between bg-background rounded-xl px-3 py-2 gap-2">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        {youtubeId && (
+          <button
+            type="button"
+            onClick={() => setVideoOpen(true)}
+            className="relative w-12 h-8 rounded-lg overflow-hidden shrink-0 border border-border"
+          >
+            <img src={`https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+              <Play className="w-3 h-3 text-white fill-white" />
+            </div>
+          </button>
+        )}
+        <span className="text-xs font-semibold truncate">{name}</span>
+      </div>
+      <span className="text-[11px] font-semibold text-muted-foreground shrink-0">{sets} مجموعات × {reps} عدات</span>
+      <VideoPlayerDialog open={videoOpen} onClose={() => setVideoOpen(false)} youtubeId={youtubeId} title={name} />
+    </li>
+  );
+}
+
 function PlanView({ plan, userId, sourceType, sourceId }: { plan: any; userId: string; sourceType: "trainer" | "personal"; sourceId: string }) {
   const days = Array.isArray(plan.exercises) ? plan.exercises : plan.schedule ? Object.values(plan.schedule) : [];
   return (
@@ -290,7 +351,16 @@ function PlanView({ plan, userId, sourceType, sourceId }: { plan: any; userId: s
             <div className="font-bold mb-3">{d.name ?? `اليوم ${d.day ?? i + 1}`}</div>
             <ul className="space-y-2">
               {(d.items ?? []).map((ex: any, j: number) => (
-                <ExerciseRow key={j} name={ex.name} sets={ex.sets} reps={ex.reps} userId={userId} sourceType={sourceType} sourceId={sourceId} />
+                <ExerciseRow
+                  key={j}
+                  name={ex.name}
+                  sets={ex.sets}
+                  reps={ex.reps}
+                  videoUrl={ex.video_url}
+                  userId={userId}
+                  sourceType={sourceType}
+                  sourceId={sourceId}
+                />
               ))}
             </ul>
           </Card>
@@ -300,11 +370,14 @@ function PlanView({ plan, userId, sourceType, sourceId }: { plan: any; userId: s
   );
 }
 
-function ExerciseRow({ name, sets, reps, userId, sourceType, sourceId }: any) {
+function ExerciseRow({ name, sets, reps, videoUrl, userId, sourceType, sourceId }: any) {
   const [done, setDone] = useState(false);
+  const [videoOpen, setVideoOpen] = useState(false);
+  const youtubeId = getYouTubeId(videoUrl);
+
   return (
-    <li className="flex items-center justify-between p-2 rounded-xl hover:bg-muted/50">
-      <div className="flex items-center gap-2">
+    <li className="flex items-center justify-between p-2 rounded-xl hover:bg-muted/50 gap-2">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
         <button
           onClick={async () => {
             await supabase.from("workout_logs").insert({
@@ -317,13 +390,29 @@ function ExerciseRow({ name, sets, reps, userId, sourceType, sourceId }: any) {
             setDone(true);
             toast.success("تم تسجيل التمرين");
           }}
-          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${done ? "gradient-primary border-primary" : "border-border"}`}
+          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition ${done ? "gradient-primary border-primary" : "border-border"}`}
         >
           {done && <CheckCircle2 className="w-4 h-4 text-primary-foreground" />}
         </button>
-        <span className={`text-sm ${done ? "line-through text-muted-foreground" : ""}`}>{name}</span>
+
+        {youtubeId && (
+          <button
+            type="button"
+            onClick={() => setVideoOpen(true)}
+            className="relative w-14 h-9 rounded-lg overflow-hidden shrink-0 border border-border"
+          >
+            <img src={`https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+              <Play className="w-3.5 h-3.5 text-white fill-white" />
+            </div>
+          </button>
+        )}
+
+        <span className={`text-sm truncate ${done ? "line-through text-muted-foreground" : ""}`}>{name}</span>
       </div>
-      <span className="text-xs font-semibold text-muted-foreground">{sets} × {reps}</span>
+      <span className="text-xs font-semibold text-muted-foreground shrink-0">{sets} × {reps}</span>
+
+      <VideoPlayerDialog open={videoOpen} onClose={() => setVideoOpen(false)} youtubeId={youtubeId} title={name} />
     </li>
   );
 }
@@ -397,7 +486,7 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
   const [name, setName] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [exercises, setExercises] = useState<any[]>([{ name: "", sets: 3, reps: 12 }]);
+  const [exercises, setExercises] = useState<any[]>([{ name: "", sets: 3, reps: 12, video_url: "" }]);
   const [saving, setSaving] = useState(false);
 
   return (
@@ -421,14 +510,25 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
             <Label>تمارين اليوم 1</Label>
             <div className="space-y-2 mt-2">
               {exercises.map((ex, i) => (
-                <div key={i} className="grid grid-cols-[1fr_60px_60px_auto] gap-2 items-center">
-                  <Input value={ex.name} onChange={(e) => { const c = [...exercises]; c[i].name = e.target.value; setExercises(c); }} placeholder="اسم التمرين" className="rounded-xl" />
-                  <Input type="number" value={ex.sets} onChange={(e) => { const c = [...exercises]; c[i].sets = +e.target.value; setExercises(c); }} className="rounded-xl text-center" />
-                  <Input type="number" value={ex.reps} onChange={(e) => { const c = [...exercises]; c[i].reps = +e.target.value; setExercises(c); }} className="rounded-xl text-center" />
-                  <button onClick={() => setExercises(exercises.filter((_, j) => j !== i))} className="p-1"><X className="w-4 h-4" /></button>
+                <div key={i} className="rounded-xl border border-border p-2 space-y-2">
+                  <div className="grid grid-cols-[1fr_60px_60px_auto] gap-2 items-center">
+                    <Input value={ex.name} onChange={(e) => { const c = [...exercises]; c[i].name = e.target.value; setExercises(c); }} placeholder="اسم التمرين" className="rounded-xl" />
+                    <Input type="number" value={ex.sets} onChange={(e) => { const c = [...exercises]; c[i].sets = +e.target.value; setExercises(c); }} className="rounded-xl text-center" />
+                    <Input type="number" value={ex.reps} onChange={(e) => { const c = [...exercises]; c[i].reps = +e.target.value; setExercises(c); }} className="rounded-xl text-center" />
+                    <button onClick={() => setExercises(exercises.filter((_, j) => j !== i))} className="p-1"><X className="w-4 h-4" /></button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Youtube className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Input
+                      value={ex.video_url ?? ""}
+                      onChange={(e) => { const c = [...exercises]; c[i].video_url = e.target.value; setExercises(c); }}
+                      placeholder="رابط فيديو يوتيوب لشرح التمرين (اختياري)"
+                      className="rounded-xl h-8 text-xs"
+                    />
+                  </div>
                 </div>
               ))}
-              <Button size="sm" variant="outline" onClick={() => setExercises([...exercises, { name: "", sets: 3, reps: 12 }])} className="rounded-xl w-full">
+              <Button size="sm" variant="outline" onClick={() => setExercises([...exercises, { name: "", sets: 3, reps: 12, video_url: "" }])} className="rounded-xl w-full">
                 <Plus className="w-4 h-4 ml-1" /> إضافة تمرين
               </Button>
             </div>
@@ -437,7 +537,9 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
             disabled={saving}
             onClick={async () => {
               if (!name.trim()) return toast.error("اكتبي اسم الخطة");
-              const items = exercises.filter((e) => e.name?.trim());
+              const items = exercises
+                .filter((e) => e.name?.trim())
+                .map((e) => ({ name: e.name, sets: e.sets, reps: e.reps, video_url: e.video_url?.trim() || null }));
               if (items.length === 0) return toast.error("أضيفي تمريناً واحداً على الأقل");
               setSaving(true);
               try {
@@ -457,7 +559,7 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
                 if (error) throw error;
                 toast.success("تم الحفظ");
                 setName(""); setImageFile(null); setIsPublic(false);
-                setExercises([{ name: "", sets: 3, reps: 12 }]);
+                setExercises([{ name: "", sets: 3, reps: 12, video_url: "" }]);
                 onClose(); onSaved();
               } catch (err: any) { toast.error(err.message); }
               finally { setSaving(false); }

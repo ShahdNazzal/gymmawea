@@ -158,94 +158,84 @@ function ProfilePage() {
         </>
       )}
 
-      {/* الجدول الأسبوعي الخاص بالمستخدم */}
-      <Card className="p-5 rounded-3xl">
-        <div className="flex items-center justify-between mb-3">
-          <div className="font-bold text-sm flex items-center gap-2"><Calendar className="w-4 h-4" /> جدولي الأسبوعي</div>
-          <Link to="/workouts" className="text-xs text-primary font-semibold">تعديل</Link>
-        </div>
+      
+      
 
-        {schedule.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-6">لسا ما عملتي جدول أسبوعي — من صفحة "التمارين" فيكِ تحددي خطتك لكل يوم</p>
-        ) : (
-          <>
-            <div className="grid grid-cols-7 gap-1 text-center mb-3">
-              {DAYS.map((d, i) => {
-                const item = schedule.find((s) => s.day_of_week === i);
-                return (
-                  <div key={i} className={`p-1.5 rounded-xl text-[9px] leading-tight ${item ? "gradient-primary text-primary-foreground" : "bg-muted"}`}>
-                    <div className="font-bold break-words">{d}</div>
-                    <div className="mt-1 truncate">{item?.title ?? "—"}</div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="space-y-1.5">
-              {schedule.map((s) => (
-                <div key={s.id} className="flex items-center gap-2 p-2 rounded-xl bg-muted/50">
-                  <div className="w-16 text-[11px] font-bold text-primary shrink-0">{DAYS[s.day_of_week]}</div>
-                  <div className="flex-1 min-w-0 text-xs font-semibold truncate">{s.title}</div>
-                  {s.workouts?.name && (
-                    <div className="text-[10px] text-muted-foreground truncate shrink-0 max-w-[100px]">{s.workouts.name}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </Card>
-      {/* المنشورات بشكل شبكة على طريقة انستقرام */}
-      <Card className="p-5 rounded-3xl">
-        <div className="flex items-center justify-between mb-3">
-          <div className="font-bold">منشوراتي</div>
-          <Button size="sm" onClick={() => setNewPostOpen(true)} className="rounded-xl gradient-primary">
-            <ImagePlus className="w-4 h-4 ml-1" /> منشور
-          </Button>
-        </div>
+      {/* الجدول الأسبوعي */}
+<Card className="p-5 rounded-3xl">
+  <div className="flex items-center justify-between mb-5">
+    <div className="font-bold text-sm flex items-center gap-2">
+      <Calendar className="w-4 h-4" /> جدولي الأسبوعي
+    </div>
+    <Link to="/workouts" className="text-xs text-primary font-semibold">
+      تعديل
+    </Link>
+  </div>
 
-        {posts.length === 0 && (
-          <div className="text-center py-8">
-            <ImageOff className="w-9 h-9 mx-auto text-muted-foreground mb-2" />
-            <p className="text-xs text-muted-foreground">لا توجد منشورات بعد</p>
-          </div>
-        )}
+  {schedule.length === 0 ? (
+    <p className="text-xs text-muted-foreground text-center py-8">
+      لسا ما عملتي جدول أسبوعي
+    </p>
+  ) : (
+    <div className="relative">
+      {/* الخط الخلفي */}
+      <div className="absolute top-6 left-0 right-0 h-[2px] bg-border z-0" />
 
-        {imagePosts.length > 0 && (
-          <div className="grid grid-cols-2 gap-1.5">
-            {imagePosts.map((p, i) => (
-              <motion.button
-                key={p.id}
-                type="button"
-                onClick={() => setOpenPost(p)}
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: i * 0.03 }}
-                className="relative aspect-square rounded-2xl overflow-hidden group"
+      <div className="flex justify-between gap-2 relative z-10">
+        {DAYS.map((d, i) => {
+          const item = schedule.find((s) => s.day_of_week === i);
+          const isToday = new Date().getDay() === i;
+
+          return (
+            <div key={i} className="flex flex-col items-center flex-1">
+              {/* الدائرة */}
+<div
+  className={`w-14 h-14 flex items-center justify-center rounded-full text-[10px] font-bold text-center leading-tight px-1
+  ${
+    item
+      ? "gradient-primary text-white"
+      : "bg-muted text-muted-foreground"
+  }
+  ${isToday ? "ring-2 ring-primary scale-110" : ""}
+`}
+>
+  {d}
+</div>
+
+
+               
+              {/* الكرت */}
+              <div
+                className={`mt-3 w-full text-center px-2 py-2 rounded-xl text-[11px] leading-tight
+                ${
+                  item
+                    ? "bg-primary/10 text-primary font-semibold"
+                    : "text-muted-foreground"
+                }`}
               >
-                <img src={p.image_url} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                {p.content && (
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent p-2">
-                    <p className="text-[11px] text-white/95 line-clamp-2 text-right leading-snug">{p.content}</p>
-                  </div>
+                {item ? (
+                  <>
+                    <div className="font-bold truncate">
+                      {item.title}
+                    </div>
+                    {item.workouts?.name && (
+                      <div className="text-[10px] opacity-80 truncate">
+                        {item.workouts.name}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  "راحة"
                 )}
-              </motion.button>
-            ))}
-          </div>
-        )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  )}
+</Card>
 
-        {textPosts.length > 0 && (
-          <div className="space-y-2 mt-3">
-            {textPosts.map((p, i) => (
-              <motion.div key={p.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
-                <div className="rounded-2xl p-3 gradient-blush">
-                  <p className="text-sm leading-relaxed">{p.content}</p>
-                  <div className="text-[10px] text-muted-foreground mt-1.5">{new Date(p.created_at).toLocaleDateString("ar")}</div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </Card>
 
       {/* لايتبوكس بسيط لعرض المنشور موسّعاً */}
       <AnimatePresence>

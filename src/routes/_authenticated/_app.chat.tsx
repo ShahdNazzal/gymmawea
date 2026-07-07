@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card } from "@/components/ui/card";
@@ -18,16 +18,55 @@ export const Route = createFileRoute("/_authenticated/_app/chat")({
   component: ChatPage,
 });
 
+type ConvMeta = {
+  lastMessage: string;
+  lastAt: string;
+  fromMe: boolean;
+  unread: boolean;
+};
+
 function ChatPage() {
   const { user, role } = useAuth();
   const [convs, setConvs] = useState<any[]>([]);
+  const [convsMeta, setConvsMeta] = useState<Record<string, ConvMeta>>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // نجيب آخر رسالة + حالة القراءة لكل محادثة، عشان نرتّب حسب الأحدث ونعرض معاينة الرسالة
+  const loadConvsMeta = async (userId: string, otherIds: string[]) => {
+    if (otherIds.length === 0) return;
+    const { data: msgs, error } = await db
+      .from("messages")
+      .select("sender_id, recipient_id, content, created_at, read")
+      .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("loadConvsMeta error:", error);
+      return;
+    }
+
+    const meta: Record<string, ConvMeta> = {};
+    for (const m of msgs ?? []) {
+      const otherId = m.sender_id === userId ? m.recipient_id : m.sender_id;
+      if (!otherIds.includes(otherId)) continue;
+      if (meta[otherId]) continue; // أول ظهور = أحدث رسالة لأنه مرتبة تنازلياً أصلاً
+      meta[otherId] = {
+        lastMessage: m.content,
+        lastAt: m.created_at,
+        fromMe: m.sender_id === userId,
+        unread: m.sender_id !== userId && m.read === false,
+      };
+    }
+    setConvsMeta(meta);
+  };
 
   useEffect(() => {
     if (!user) return;
     (async () => {
       setLoading(true);
+
+      let members: any[] = [];
 
       if (role === "trainer") {
         // المدربة: بتشوف كل الأعضاء (أو تقدري تعدليها لاحقًا لتعرض بس اللي راسلوها)
@@ -38,10 +77,9 @@ function ChatPage() {
         const trainerIds = new Set((trainerRoles ?? []).map((r) => r.user_id));
 
         const { data: allProfiles } = await supabase.from("profiles").select("*");
-        const members = (allProfiles ?? []).filter(
+        members = (allProfiles ?? []).filter(
           (p) => p.id !== user.id && !trainerIds.has(p.id)
         );
-        setConvs(members);
       } else {
         // العضوة: بتشوف كل المدربات مباشرة
         const { data: trainerRoles } = await supabase
@@ -50,22 +88,81 @@ function ChatPage() {
           .eq("role", "trainer");
         const trainerIds = (trainerRoles ?? []).map((r) => r.user_id);
 
-        if (trainerIds.length === 0) {
-          setConvs([]);
-        } else {
+        if (trainerIds.length > 0) {
           const { data: profs } = await supabase
             .from("profiles")
             .select("*")
             .in("id", trainerIds);
-          setConvs(profs ?? []);
+          members = profs ?? [];
         }
       }
 
+      setConvs(members);
+      await loadConvsMeta(user.id, members.map((m) => m.id));
       setLoading(false);
     })();
   }, [user, role]);
 
-  if (selected) return <ChatView userId={user!.id} otherId={selected} onBack={() => setSelected(null)} />;
+  // تحديث فوري لما توصل/تنقرأ رسائل والمستخدم واقف على قائمة المحادثات
+  useEffect(() => {
+    if (!user || convs.length === 0) return;
+    const otherIds = convs.map((c) => c.id);
+
+    const channel = supabase
+      .channel(`chat-list-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload: any) => {
+          const m = payload.new;
+          if (m.sender_id === user.id || m.recipient_id === user.id) {
+            loadConvsMeta(user.id, otherIds);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        (payload: any) => {
+          const m = payload.new;
+          if (m.sender_id === user.id || m.recipient_id === user.id) {
+            loadConvsMeta(user.id, otherIds);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, convs]);
+
+  // ترتيب المحادثات: الأحدث رسالة فوق، واللي ما بعتلهم/منهم أي رسالة لسا ينزلوا تحت
+  const sortedConvs = useMemo(() => {
+    return [...convs].sort((a, b) => {
+      const metaA = convsMeta[a.id];
+      const metaB = convsMeta[b.id];
+      if (metaA && metaB) return new Date(metaB.lastAt).getTime() - new Date(metaA.lastAt).getTime();
+      if (metaA && !metaB) return -1;
+      if (!metaA && metaB) return 1;
+      return 0;
+    });
+  }, [convs, convsMeta]);
+
+  const openConversation = async (otherId: string) => {
+    setSelected(otherId);
+    // نعلّم المحادثة كمقروءة فوراً بمجرد الفتح عشان تتحدث القائمة لما نرجع
+    await db.from("messages").update({ read: true }).eq("recipient_id", user!.id).eq("sender_id", otherId).eq("read", false);
+    setConvsMeta((prev) => (prev[otherId] ? { ...prev, [otherId]: { ...prev[otherId], unread: false } } : prev));
+  };
+
+  const handleBack = () => {
+    setSelected(null);
+    // نحدّث حالة القراءة/المعاينة لما نرجع من المحادثة
+    if (user) loadConvsMeta(user.id, convs.map((c) => c.id));
+  };
+
+  if (selected) return <ChatView userId={user!.id} otherId={selected} onBack={handleBack} />;
 
   return (
     <div className="space-y-4">
@@ -83,19 +180,32 @@ function ChatPage() {
       )}
 
       <div className="space-y-2">
-        {convs.map((c) => (
-          <button key={c.id} onClick={() => setSelected(c.id)} className="w-full text-right">
-            <Card className="p-4 rounded-2xl flex items-center gap-3 hover:shadow-soft transition">
-              <div className="w-12 h-12 rounded-2xl gradient-primary text-primary-foreground flex items-center justify-center font-extrabold">
-                {c.full_name?.[0] ?? "؟"}
-              </div>
-              <div className="flex-1">
-                <div className="font-bold">{c.full_name}</div>
-                <div className="text-xs text-muted-foreground">اضغطي لبدء المحادثة</div>
-              </div>
-            </Card>
-          </button>
-        ))}
+        {sortedConvs.map((c) => {
+          const meta = convsMeta[c.id];
+          const preview = meta ? `${meta.fromMe ? "أنتِ: " : ""}${meta.lastMessage}` : "اضغطي لبدء المحادثة";
+          const isUnread = !!meta?.unread;
+
+          return (
+            <button key={c.id} onClick={() => openConversation(c.id)} className="w-full text-right">
+              <Card className="p-4 rounded-2xl flex items-center gap-3 hover:shadow-soft transition">
+                <div className="relative shrink-0">
+                  <div className="w-12 h-12 rounded-2xl gradient-primary text-primary-foreground flex items-center justify-center font-extrabold">
+                    {c.full_name?.[0] ?? "؟"}
+                  </div>
+                  {isUnread && (
+                    <div className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-destructive border-2 border-background" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className={`truncate ${isUnread ? "font-extrabold" : "font-bold"}`}>{c.full_name}</div>
+                  <div className={`text-xs truncate mt-0.5 ${isUnread ? "text-foreground font-semibold" : "text-muted-foreground"}`}>
+                    {preview}
+                  </div>
+                </div>
+              </Card>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

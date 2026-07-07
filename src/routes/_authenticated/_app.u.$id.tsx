@@ -1,3 +1,5 @@
+//C:\Users\lenovo\Downloads\jammawia-main (1)\jammawia-main\src\routes\_authenticated\_app.u.$id.tsx
+
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ArrowRight, Dumbbell, ChevronDown, ChevronUp, ImageOff, X,
-  Heart, MessageCircle, MoreVertical, Send, Trash2,
+  Heart, MessageCircle, MoreVertical, Send, Trash2, Play,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -15,6 +17,22 @@ import { toast } from "sonner";
 // نستخدم هاد المتغير بكل استعلامات الجداول الجديدة (post_likes / post_comments)
 // لأنه ملف الأنواع التلقائي تبع Supabase لسا ما تحدث فيهم
 const db = supabase as any;
+
+// نستخرج معرف فيديو اليوتيوب من أي شكل رابط (watch / youtu.be / shorts / embed)
+function getYouTubeId(url?: string | null): string | null {
+  if (!url) return null;
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{6,})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
 
 export const Route = createFileRoute("/_authenticated/_app/u/$id")({
   head: () => ({ meta: [{ title: "الملف الشخصي — جمّاوية" }] }),
@@ -41,8 +59,6 @@ function PublicUserProfile() {
 
   const isOwnProfile = currentUser?.id === id;
 
-  // نجيب المنشورات + بيانات اللايك/التعليقات، ونعتمد على بروفايل الصفحة نفسه (profileData)
-  // بدل أي join معقّد مع جدول profiles
   const loadPosts = async (profileData: any) => {
     setLoadingPosts(true);
     const { data: ps, error } = await supabase
@@ -174,25 +190,7 @@ function PublicUserProfile() {
         </div>
       </Card>
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-{/* الخطط العامة */}
+      {/* الخطط العامة */}
       {workouts.length > 0 && (
         <div>
           <h2 className="font-bold mb-3 pt-2">الخطط العامة</h2>
@@ -233,10 +231,13 @@ function PublicUserProfile() {
                               <div className="text-sm font-bold text-primary">{d.name ?? `اليوم ${d.day ?? dayIdx + 1}`}</div>
                               <ul className="space-y-2">
                                 {(d.items ?? []).map((ex: any, exIdx: number) => (
-                                  <li key={exIdx} className="bg-muted/50 rounded-xl p-3 flex items-center justify-between gap-2">
-                                    <span className="font-semibold text-sm">{ex?.name ?? `تمرين ${exIdx + 1}`}</span>
-                                    <span className="text-xs font-semibold text-muted-foreground shrink-0">{ex?.sets} × {ex?.reps}</span>
-                                  </li>
+                                  <ExerciseItemWithVideo
+                                    key={exIdx}
+                                    name={ex?.name ?? `تمرين ${exIdx + 1}`}
+                                    sets={ex?.sets}
+                                    reps={ex?.reps}
+                                    videoUrl={ex?.video_url}
+                                  />
                                 ))}
                               </ul>
                             </div>
@@ -251,22 +252,6 @@ function PublicUserProfile() {
           </div>
         </div>
       )}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
       {/* المنشورات - فيد على طريقة انستقرام */}
       <div className="space-y-4">
@@ -373,8 +358,6 @@ function PublicUserProfile() {
         )}
       </AnimatePresence>
 
-      
-
       {/* ديالوج التعليقات (بدون ردود متشعبة - تعليقات مباشرة فقط) */}
       <CommentsDialog
         postId={commentsPostId}
@@ -387,6 +370,56 @@ function PublicUserProfile() {
         }
       />
     </div>
+  );
+}
+
+// عنصر تمرين ضمن الخطط العامة، فيه ثمبنيل فيديو قابل للضغط إذا موجود رابط
+function ExerciseItemWithVideo({ name, sets, reps, videoUrl }: { name: string; sets?: number; reps?: number; videoUrl?: string }) {
+  const [videoOpen, setVideoOpen] = useState(false);
+  const youtubeId = getYouTubeId(videoUrl);
+
+  return (
+    <li className="bg-muted/50 rounded-xl p-3 flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        {youtubeId && (
+          <button
+            type="button"
+            onClick={() => setVideoOpen(true)}
+            className="relative w-12 h-8 rounded-lg overflow-hidden shrink-0 border border-border"
+          >
+            <img src={`https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+              <Play className="w-3 h-3 text-white fill-white" />
+            </div>
+          </button>
+        )}
+        <span className="font-semibold text-sm truncate">{name}</span>
+      </div>
+      <span className="text-xs font-semibold text-muted-foreground shrink-0">{sets} × {reps}</span>
+      <VideoPlayerDialog open={videoOpen} onClose={() => setVideoOpen(false)} youtubeId={youtubeId} title={name} />
+    </li>
+  );
+}
+
+function VideoPlayerDialog({ open, onClose, youtubeId, title }: { open: boolean; onClose: () => void; youtubeId: string | null; title: string }) {
+  if (!youtubeId) return null;
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="rounded-3xl max-w-lg p-0 overflow-hidden">
+        <div className="w-full aspect-video bg-black">
+          <iframe
+            className="w-full h-full"
+            src={`https://www.youtube.com/embed/${youtubeId}`}
+            title={title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+        <div className="p-4">
+          <div className="font-bold text-sm">{title}</div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
