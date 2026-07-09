@@ -10,12 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2,
-  ImagePlus, ChevronDown, ChevronUp, Play, Youtube, Moon,
+  ImagePlus, ChevronDown, ChevronUp, Play, Youtube, Moon, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { uploadFile } from "@/lib/upload";
+import { workerData } from "worker_threads";
 
 export const Route = createFileRoute("/_authenticated/_app/workouts")({
   head: () => ({ meta: [{ title: "التمارين — جمّاوية" }] }),
@@ -47,6 +48,108 @@ function isFixedWeekPlan(plan: any): boolean {
   return days.length === 7 && days.every((d: any) => typeof d?.day_of_week === "number");
 }
 
+// ---------- أدوات الصوت المشتركة (شغّالة على اللابتوب والموبايل) ----------
+
+// AudioContext واحد مشترك بكل الصفحة، بنعيد استخدامه بدل ما نفتح واحد جديد كل مرة
+let sharedAudioCtx: AudioContext | null = null;
+function getSharedAudioContext(): AudioContext | null {
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return null;
+    if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
+    if (sharedAudioCtx.state === "suspended") sharedAudioCtx.resume();
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+// نغمة احتفال قصيرة (3 نغمات صاعدة) لما توكّدي إنجاز تمرين — لازم تتنادى مباشرة جوّا معالج ضغطة المستخدم عشان تشتغل عالموبايل
+function playCompletionChime() {
+  const ctx = getSharedAudioContext();
+  if (!ctx) return;
+  const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+  notes.forEach((freq, i) => {
+    const startAt = ctx.currentTime + i * 0.12;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.35, startAt + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.28);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(startAt);
+    osc.stop(startAt + 0.3);
+  });
+}
+
+// ---------- كونفيتي بسيط بدون أي مكتبة خارجية ----------
+
+type ConfettiPiece = {
+  x: number; y: number; w: number; h: number; color: string;
+  speedY: number; speedX: number; rotation: number; rotationSpeed: number;
+};
+
+function ConfettiBurst({ triggerKey }: { triggerKey: number }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!triggerKey) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx2d = canvas.getContext("2d");
+    if (!ctx2d) return;
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const colors = ["#ff6b9d", "#c06fdb", "#6bc5ff", "#ffd166", "#8affa0", "#ff9f6b"];
+    const pieces: ConfettiPiece[] = Array.from({ length: 90 }, () => ({
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * canvas.height * 0.4,
+      w: 6 + Math.random() * 6,
+      h: 8 + Math.random() * 8,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      speedY: 2.5 + Math.random() * 3,
+      speedX: (Math.random() - 0.5) * 2.5,
+      rotation: Math.random() * 360,
+      rotationSpeed: (Math.random() - 0.5) * 12,
+    }));
+
+    let frameId: number;
+    const duration = 1800;
+    const start = performance.now();
+
+    const draw = (now: number) => {
+      const elapsed = now - start;
+      ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+      pieces.forEach((p) => {
+        p.x += p.speedX;
+        p.y += p.speedY;
+        p.rotation += p.rotationSpeed;
+        ctx2d.save();
+        ctx2d.translate(p.x, p.y);
+        ctx2d.rotate((p.rotation * Math.PI) / 180);
+        ctx2d.fillStyle = p.color;
+        ctx2d.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx2d.restore();
+      });
+      if (elapsed < duration) {
+        frameId = requestAnimationFrame(draw);
+      } else {
+        ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    };
+    frameId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frameId);
+  }, [triggerKey]);
+
+  if (!triggerKey) return null;
+  return <canvas ref={canvasRef} className="fixed inset-0 z-[9999] pointer-events-none" />;
+}
+
 function WorkoutsPage() {
   const { user } = useAuth();
   const [active, setActive] = useState<any>(null);
@@ -56,6 +159,96 @@ function WorkoutsPage() {
   const [switchOpen, setSwitchOpen] = useState(false);
   const [newPlanOpen, setNewPlanOpen] = useState(false);
   const [timerOpen, setTimerOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<any>(null);
+
+  // ===== مؤقت الراحة — الحالة مركزية هنا عشان تضل شغالة حتى لو الديالوج مقفول أو التطبيق بالخلفية =====
+  const [timerSec, setTimerSec] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerTargetTime, setTimerTargetTime] = useState<number | null>(null);
+  const timerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const timerFiredRef = useRef(false);
+
+  // طلب إذن الإشعارات عند أول تحميل
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // مرجع دالة إطلاق المنبه (عشان نستخدمه جوّا useEffect بدون مشاكل الاعتماديات)
+  const fireAlarmRef = useRef<() => void>(() => {});
+  fireAlarmRef.current = () => {
+    const audio = timerAudioRef.current;
+    if (audio) {
+      audio.currentTime = 0;
+      audio.play().catch(() => playCompletionChime());
+    } else {
+      playCompletionChime();
+    }
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("انتهى وقت الراحة ⏰", {
+        body: "رجعي لتمارينك!",
+        icon: "/favicon.ico",
+      });
+    }
+    toast.success("انتهى وقت الراحة ⏰");
+  };
+
+  // عدّاد تنازلي يعمل لما التطبيق ظاهر
+  useEffect(() => {
+    if (!timerRunning || !timerTargetTime) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((timerTargetTime - Date.now()) / 1000));
+      setTimerSec(remaining);
+      if (remaining <= 0 && !timerFiredRef.current) {
+        timerFiredRef.current = true;
+        setTimerRunning(false);
+        fireAlarmRef.current();
+      }
+    };
+    tick();
+    const t = setInterval(tick, 250);
+    return () => clearInterval(t);
+  }, [timerRunning, timerTargetTime]);
+
+  // لما المستخدم يرجع للتطبيق بعد ما كان بالخلفية، نتحقق إذا المنبه لازم ينطلق
+  useEffect(() => {
+    const handler = () => {
+      if (!document.hidden && timerRunning && timerTargetTime && !timerFiredRef.current) {
+        if (Date.now() >= timerTargetTime) {
+          timerFiredRef.current = true;
+          setTimerRunning(false);
+          setTimerSec(0);
+          fireAlarmRef.current();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [timerRunning, timerTargetTime]);
+
+  const startTimer = (seconds: number) => {
+    timerFiredRef.current = false;
+    setTimerSec(seconds);
+    setTimerTargetTime(Date.now() + seconds * 1000);
+    setTimerRunning(true);
+    // فك قفل الصوت جوّا معالج الضغطة (user gesture)
+    const audio = timerAudioRef.current;
+    if (audio) {
+      audio.play().then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+      }).catch(() => {});
+    }
+    getSharedAudioContext();
+  };
+
+  const stopTimer = () => {
+    setTimerRunning(false);
+    setTimerTargetTime(null);
+    timerFiredRef.current = false;
+  };
+  // ===== نهاية المؤقت =====
 
   const loadAll = async () => {
     if (!user) return;
@@ -81,6 +274,9 @@ function WorkoutsPage() {
 
   return (
     <div className="space-y-5">
+      {/* عنصر الصوت مخفي دائمًا بالـ DOM حتى لو الديالوج مقفول */}
+      <audio ref={timerAudioRef} src="/alarm.mp3" preload="auto" />
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-extrabold">تمارينك</h1>
         <Button size="sm" variant="outline" onClick={() => setTimerOpen(true)} className="rounded-xl">
@@ -88,18 +284,9 @@ function WorkoutsPage() {
         </Button>
       </div>
 
-      <div className="glass p-3 rounded-2xl flex items-center justify-between text-sm">
-        <span className="font-semibold">
-          البرنامج النشط: {currentType === "trainer" ? "مدربة" : currentType === "personal" ? "شخصي" : "—"}
-        </span>
-        <Button size="sm" variant="ghost" onClick={() => setSwitchOpen(true)} className="rounded-xl text-primary">
-          تبديل
-        </Button>
-      </div>
-
       {loading && <Skeleton className="h-40 w-full rounded-3xl" />}
 
-      {/* جدولك الأسبوعي - المصدر الوحيد هلأ هو الخطة المعتمدة حالياً */}
+      {/* جدولك الأسبوعي */}
       {!loading && (
         <Card className="p-5 rounded-3xl">
           <div className="font-bold text-sm flex items-center gap-2 mb-3">
@@ -108,7 +295,7 @@ function WorkoutsPage() {
 
           {!activePlan ? (
             <p className="text-xs text-muted-foreground text-center py-6">
-              ما في خطة نشطة حالياً — اعتمدي خطة من "خططي الشخصية" بالأسفل أو من خطط المدربات (زر تبديل) وبينعرض جدولك تلقائياً هون.
+              ما في خطة نشطة حالياً — اعتمدي خطة من "خططي الشخصية" بالأسفل
             </p>
           ) : (
             <ActiveScheduleView
@@ -124,7 +311,7 @@ function WorkoutsPage() {
       <div className="pt-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold">خططي الشخصية</h2>
-          <Button size="sm" onClick={() => setNewPlanOpen(true)} className="rounded-xl gradient-primary">
+          <Button size="sm" onClick={() => { setEditingPlan(null); setNewPlanOpen(true); }} className="rounded-xl gradient-primary">
             <Plus className="w-4 h-4 ml-1" /> إنشاء
           </Button>
         </div>
@@ -154,6 +341,14 @@ function WorkoutsPage() {
                     {daysCount} يوم تمرين • {p.is_public ? "عام" : "خاص"}
                   </div>
                 </div>
+                {/* زر التعديل */}
+                <button
+                  onClick={() => { setEditingPlan(p); setNewPlanOpen(true); }}
+                  className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                  title="تعديل الخطة"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
                 <Button
                   size="sm"
                   variant={active?.workout_plan_id === p.id ? "default" : "outline"}
@@ -183,6 +378,30 @@ function WorkoutsPage() {
         </div>
       </div>
 
+      {/* مؤقت عائم — يظهر لما الديالوج مقفول والمؤقت شغال */}
+      <AnimatePresence>
+        {timerRunning && !timerOpen && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className="fixed bottom-4 left-4 right-4 z-50"
+          >
+            <Card className="p-3 rounded-2xl gradient-primary flex items-center justify-between shadow-lg shadow-primary/20">
+              <div className="flex items-center gap-2">
+                <Timer className="w-5 h-5 text-primary-foreground" />
+                <span className="text-primary-foreground font-bold text-sm">مؤقت الراحة</span>
+              </div>
+              <div className="text-2xl font-extrabold text-primary-foreground tabular-nums">{timerSec}s</div>
+              <Button size="sm" variant="secondary" onClick={stopTimer} className="rounded-xl font-bold">
+                إيقاف
+              </Button>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <SwitchDialog
         open={switchOpen}
         onClose={() => setSwitchOpen(false)}
@@ -191,8 +410,21 @@ function WorkoutsPage() {
         onSwitched={() => { setSwitchOpen(false); loadAll(); }}
         currentSelection={active}
       />
-      <NewPlanDialog open={newPlanOpen} onClose={() => setNewPlanOpen(false)} userId={user?.id ?? ""} onSaved={loadAll} />
-      <RestTimerDialog open={timerOpen} onClose={() => setTimerOpen(false)} />
+      <NewPlanDialog
+        open={newPlanOpen}
+        onClose={() => { setNewPlanOpen(false); setEditingPlan(null); }}
+        userId={user?.id ?? ""}
+        onSaved={() => { loadAll(); setEditingPlan(null); }}
+        editPlan={editingPlan}
+      />
+      <RestTimerDialog
+        open={timerOpen}
+        onClose={() => setTimerOpen(false)}
+        timerRunning={timerRunning}
+        timerSec={timerSec}
+        onStart={startTimer}
+        onStop={stopTimer}
+      />
     </div>
   );
 }
@@ -220,18 +452,24 @@ function VideoPlayerDialog({ open, onClose, youtubeId, title }: { open: boolean;
   );
 }
 
-// عنصر تمرين واحد: فيديو + اسم + شرح أداء + نصيحة + زر تسجيل الإنجاز
+// عنصر تمرين واحد: فيديو + اسم + شرح أداء + نصيحة + زر تسجيل الإنجاز مع كونفيتي وصوت احتفال
 function ExerciseRow({ name, sets, reps, videoUrl, instruction, tips, userId, sourceType, sourceId }: any) {
   const [done, setDone] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
+  const [confettiKey, setConfettiKey] = useState(0);
   const youtubeId = getYouTubeId(videoUrl);
 
   return (
-    <li className="p-2.5 rounded-xl hover:bg-muted/50">
+    <li className="p-2.5 rounded-xl hover:bg-muted/50 relative">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <button
-            onClick={async () => {
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (!done) {
+                playCompletionChime();
+                setConfettiKey(Date.now());
+              }
               await supabase.from("workout_logs").insert({
                 user_id: userId,
                 source_type: sourceType,
@@ -240,7 +478,7 @@ function ExerciseRow({ name, sets, reps, videoUrl, instruction, tips, userId, so
                 sets, reps,
               });
               setDone(true);
-              toast.success("تم تسجيل التمرين");
+              toast.success("تم تسجيل التمرين 🎉");
             }}
             className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition ${done ? "gradient-primary border-primary" : "border-border"}`}
           >
@@ -273,6 +511,7 @@ function ExerciseRow({ name, sets, reps, videoUrl, instruction, tips, userId, so
       )}
 
       <VideoPlayerDialog open={videoOpen} onClose={() => setVideoOpen(false)} youtubeId={youtubeId} title={name} />
+      <ConfettiBurst triggerKey={confettiKey} />
     </li>
   );
 }
@@ -294,7 +533,6 @@ function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any;
         </div>
       </div>
 
-      {/* نظرة سريعة على أيام الأسبوع، فقط للخطط ذات البنية الثابتة (أحد → سبت) */}
       {fixedWeek && (
         <div className="grid grid-cols-7 gap-1 text-center">
           {days.map((d: any, i: number) => (
@@ -453,18 +691,84 @@ function defaultDays(): NewPlanDay[] {
   return DAYS.map((_, i) => ({ day_of_week: i, is_rest: true, items: [] }));
 }
 
-function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
+function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [days, setDays] = useState<NewPlanDay[]>(defaultDays());
   const [saving, setSaving] = useState(false);
 
-  const reset = () => {
-    setName(""); setDescription(""); setIsPublic(false); setImageFile(null);
-    setDays(defaultDays());
-  };
+  // ref يضمن إننا نوصل لقيمة editPlan دايماً بدون مشاكل batching
+  const editRef = useRef<any>(null);
+  editRef.current = editPlan;
+
+  useEffect(() => {
+    if (!open) return;
+
+    const ep = editRef.current;
+    if (ep) {
+      setName(ep.name || "");
+      setDescription(ep.description || "");
+      setIsPublic(!!ep.is_public);
+      setImageFile(null);
+      setExistingImageUrl(ep.image_url || null);
+
+      const raw: any[] = Array.isArray(ep.exercises) ? [...ep.exercises] : [];
+
+      // 1) أسبوع ثابت (7 أيام فيها day_of_week) — نستخدم != null بدل typeof number عشان نتجنب مشكلة الـ strings من Supabase
+      if (raw.length === 7 && raw.every((d) => d.day_of_week != null)) {
+        const sorted = raw.sort((a, b) => Number(a.day_of_week) - Number(b.day_of_week));
+        setDays(
+          sorted.map((d) => ({
+            day_of_week: Number(d.day_of_week),
+            is_rest: !!d.is_rest,
+            items: Array.isArray(d.items)
+              ? d.items.map((ex: any) => ({
+                  name: ex.name ?? "",
+                  sets: Number(ex.sets) || 3,
+                  reps: Number(ex.reps) || 12,
+                  video_url: ex.video_url ?? "",
+                  instruction: ex.instruction ?? "",
+                  tips: ex.tips ?? "",
+                }))
+              : [],
+          }))
+        );
+      }
+      // 2) بنية أخرى (قديمة أو مختلفة)
+      else if (raw.length > 0) {
+        setDays(
+          raw.map((d, i) => ({
+            day_of_week: d.day_of_week != null ? Number(d.day_of_week) : i,
+            is_rest: !!d.is_rest,
+            items: Array.isArray(d.items)
+              ? d.items.map((ex: any) => ({
+                  name: ex.name ?? "",
+                  sets: Number(ex.sets) || 3,
+                  reps: Number(ex.reps) || 12,
+                  video_url: ex.video_url ?? "",
+                  instruction: ex.instruction ?? "",
+                  tips: ex.tips ?? "",
+                }))
+              : [],
+          }))
+        );
+      }
+      // 3) ما في بيانات تمارين
+      else {
+        setDays(defaultDays());
+      }
+    } else {
+      setName("");
+      setDescription("");
+      setIsPublic(false);
+      setImageFile(null);
+      setExistingImageUrl(null);
+      setDays(defaultDays());
+    }
+  }, [open]);
 
   const updateDay = (idx: number, patch: Partial<NewPlanDay>) => {
     setDays((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)));
@@ -480,11 +784,118 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
     );
   };
 
+  const handleSave = async () => {
+    if (!name.trim()) return toast.error("اكتبي اسم الخطة");
+
+    const cleanedDays = days.map((d) => {
+      const items = d.items
+        .filter((ex) => ex.name?.trim())
+        .map((ex) => ({
+          name: ex.name.trim(),
+          sets: ex.sets,
+          reps: ex.reps,
+          video_url: ex.video_url?.trim() || null,
+          instruction: ex.instruction?.trim() || null,
+          tips: ex.tips?.trim() || null,
+        }));
+      const isRest = d.is_rest || items.length === 0;
+      return {
+        day_of_week: d.day_of_week,
+        name: DAYS[d.day_of_week],
+        is_rest: isRest,
+        items: isRest ? [] : items,
+      };
+    });
+
+    const hasAnyTraining = cleanedDays.some((d) => !d.is_rest);
+    if (!hasAnyTraining) return toast.error("أضيفي تمريناً واحداً على الأقل بيوم واحد على الأقل");
+
+    setSaving(true);
+    try {
+      let image_url = existingImageUrl;
+      if (imageFile) {
+        image_url = await uploadFile(imageFile, userId, "workouts");
+      }
+
+      const planData = {
+        name,
+        description: description || null,
+        goal: "fitness",
+        activity_level: "moderate",
+        equipment: "home",
+        min_frequency: cleanedDays.filter((d) => !d.is_rest).length,
+        exercises: cleanedDays,
+        is_public: isPublic,
+        image_url,
+      };
+
+            if (editRef.current) {
+        const result = await supabase
+          .from("workouts")
+          .update({
+            name,
+            description: description || null,
+            goal: "fitness",
+            activity_level: "moderate",
+            equipment: "home",
+            min_frequency: cleanedDays.filter((d) => !d.is_rest).length,
+            exercises: cleanedDays,
+            is_public: isPublic,
+            image_url,
+          })
+          .eq("id", editRef.current.id);
+        if (result.error) throw result.error;
+        toast.success("تم تحديث الخطة ✏️");
+      } else {
+        const result = await supabase
+          .from("workouts")
+          .insert({
+            owner_user_id: userId,
+            name,
+            description: description || null,
+            goal: "fitness",
+            activity_level: "moderate",
+            equipment: "home",
+            min_frequency: cleanedDays.filter((d) => !d.is_rest).length,
+            exercises: cleanedDays,
+            is_public: isPublic,
+            image_url,
+          });
+        if (result.error) throw result.error;
+        toast.success("تم حفظ الخطة");
+      }
+
+      setName("");
+      setDescription("");
+      setIsPublic(false);
+      setImageFile(null);
+      setExistingImageUrl(null);
+      setDays(defaultDays());
+      onClose();
+      onSaved();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="rounded-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>خطة تمرين شخصية</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{editRef.current ? "تعديل الخطة" : "خطة تمرين شخصية"}</DialogTitle>
+        </DialogHeader>
         <div className="space-y-3">
+          {editRef.current && existingImageUrl && !imageFile && (
+            <div className="relative rounded-xl overflow-hidden">
+              <img src={existingImageUrl} className="w-full h-32 object-cover" />
+              <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-lg">
+                الصورة الحالية — اختاري صورة جديدة إذا بدك تغيّريها
+              </div>
+            </div>
+          )}
+
           <div>
             <Label>اسم الخطة</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="rounded-xl mt-1" />
@@ -591,58 +1002,10 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
 
           <Button
             disabled={saving}
-            onClick={async () => {
-              if (!name.trim()) return toast.error("اكتبي اسم الخطة");
-
-              const cleanedDays = days.map((d) => {
-                const items = d.items
-                  .filter((ex) => ex.name?.trim())
-                  .map((ex) => ({
-                    name: ex.name.trim(),
-                    sets: ex.sets,
-                    reps: ex.reps,
-                    video_url: ex.video_url?.trim() || null,
-                    instruction: ex.instruction?.trim() || null,
-                    tips: ex.tips?.trim() || null,
-                  }));
-                const isRest = d.is_rest || items.length === 0;
-                return {
-                  day_of_week: d.day_of_week,
-                  name: DAYS[d.day_of_week],
-                  is_rest: isRest,
-                  items: isRest ? [] : items,
-                };
-              });
-
-              const hasAnyTraining = cleanedDays.some((d) => !d.is_rest);
-              if (!hasAnyTraining) return toast.error("أضيفي تمريناً واحداً على الأقل بيوم واحد على الأقل");
-
-              setSaving(true);
-              try {
-                let image_url: string | null = null;
-                if (imageFile) image_url = await uploadFile(imageFile, userId, "workouts");
-                const { error } = await supabase.from("workouts").insert({
-                  owner_user_id: userId,
-                  name,
-                  description: description || null,
-                  goal: "fitness",
-                  activity_level: "moderate",
-                  equipment: "home",
-                  min_frequency: cleanedDays.filter((d) => !d.is_rest).length,
-                  exercises: cleanedDays,
-                  is_public: isPublic,
-                  image_url,
-                });
-                if (error) throw error;
-                toast.success("تم الحفظ");
-                reset();
-                onClose(); onSaved();
-              } catch (err: any) { toast.error(err.message); }
-              finally { setSaving(false); }
-            }}
+            onClick={handleSave}
             className="w-full rounded-2xl gradient-primary"
           >
-            {saving ? "جاري الحفظ..." : "حفظ الخطة"}
+            {saving ? "جاري الحفظ..." : editRef.current ? "تحديث الخطة" : "حفظ الخطة"}
           </Button>
         </div>
       </DialogContent>
@@ -650,67 +1013,59 @@ function NewPlanDialog({ open, onClose, userId, onSaved }: any) {
   );
 }
 
-function RestTimerDialog({ open, onClose }: any) {
-  const [sec, setSec] = useState(60);
-  const [running, setRunning] = useState(false);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+// مؤقت الراحة — يأخذ كل الحالة من الأب عشان يضل شغال حتى لو الديالوج مقفول
+function RestTimerDialog({ open, onClose, timerRunning, timerSec, onStart, onStop }: any) {
+  const [selectedSec, setSelectedSec] = useState(60);
 
+  // نزامن القيمة المحلية مع العدّاد الحي لما المؤقت شغال
   useEffect(() => {
-    if (!running || sec <= 0) return;
-    const t = setInterval(() => setSec((s) => s - 1), 1000);
-    return () => clearInterval(t);
-  }, [running, sec]);
-
-  // صوت تنبيه حقيقي (3 نغمات قصيرة) لما ينتهي الوقت، بدون أي ملف صوتي خارجي
-  const playBeep = () => {
-    try {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ctx) return;
-      if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") ctx.resume();
-
-      const beepCount = 3;
-      for (let i = 0; i < beepCount; i++) {
-        const startAt = ctx.currentTime + i * 0.35;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0.0001, startAt);
-        gain.gain.exponentialRampToValueAtTime(0.4, startAt + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.25);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(startAt);
-        osc.stop(startAt + 0.3);
-      }
-    } catch {
-      // تجاهل أي مشكلة بتشغيل الصوت (مثلاً متصفح ما بيدعمه)
+    if (timerRunning && timerSec > 0) {
+      setSelectedSec(timerSec);
     }
-  };
-
-  useEffect(() => {
-    if (sec === 0 && running) {
-      setRunning(false);
-      playBeep();
-      toast.success("انتهى وقت الراحة");
-    }
-  }, [sec, running]);
+  }, [timerRunning, timerSec]);
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="rounded-3xl text-center">
         <DialogHeader><DialogTitle>مؤقت الراحة</DialogTitle></DialogHeader>
-        <div className="text-6xl font-extrabold gradient-primary bg-clip-text text-transparent">{sec}</div>
-        <div className="flex gap-2 justify-center">
-          {[30, 60, 90].map((v) => (
-            <Button key={v} variant="outline" onClick={() => { setSec(v); setRunning(false); }} className="rounded-xl">{v}s</Button>
-          ))}
+
+        <div className="text-6xl font-extrabold gradient-primary bg-clip-text text-transparent tabular-nums">
+          {timerRunning ? timerSec : selectedSec}
         </div>
-        <Button onClick={() => setRunning(!running)} className="rounded-2xl gradient-primary">
-          {running ? "إيقاف" : "ابدئي"}
+
+        {!timerRunning && (
+          <div className="flex gap-2 justify-center">
+            {[30, 60, 90, 120].map((v) => (
+              <Button
+                key={v}
+                variant={selectedSec === v ? "default" : "outline"}
+                onClick={() => setSelectedSec(v)}
+                className="rounded-xl"
+              >
+                {v}s
+              </Button>
+            ))}
+          </div>
+        )}
+
+        <Button
+          onClick={() => {
+            if (timerRunning) {
+              onStop();
+            } else {
+              onStart(selectedSec);
+            }
+          }}
+          className="rounded-2xl gradient-primary"
+        >
+          {timerRunning ? "إيقاف" : "ابدئي"}
         </Button>
+
+        {timerRunning && (
+          <p className="text-[11px] text-muted-foreground">
+            تقدري تقفلي هالنافذة والمؤقت رح يكمل بالخلفية وينبّهك لما يخلص ⏰
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );
