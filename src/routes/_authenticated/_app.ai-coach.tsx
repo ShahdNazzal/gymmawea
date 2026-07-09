@@ -107,9 +107,7 @@ function normalizePlan(raw: any): Plan | null {
 const QUICK_PROMPTS: { icon: typeof Dumbbell; label: string; text: string }[] = [
   { icon: Dumbbell, label: "خطة تمرين كاملة", text: "صممي لي خطة تمرين لـ " },
   { icon: Flame, label: "نصيحة تمرين", text: "كم مرة لازم أروح الجيم بالأسبوع؟" },
-  { icon: Apple, label: "تغذية رياضية", text: "اقترحي لي وجبة تناسب هدفي بـ " },
-  { icon: HeartPulse, label: "اشرحي تمرين", text: "اشرحيلي طريقة عمل تمرين الـ " },
-  { icon: Pizza, label: "شو آكل قبل التمرين و بعده؟", text: "شنو آكل قبل التمرين و بعده؟" },
+  { icon: Apple, label: "تغذية رياضية", text: "شو آكل قبل التمرين و بعده؟" },
   { icon: Shield, label: "نصيحة أمان", text: "كيف أحمّي قبل التمرين؟" },
 ];
 
@@ -208,11 +206,7 @@ function AICoachPage() {
 
   // إدراج الاقتراح الجاهز داخل صندوق الكتابة، وترك المؤشر بآخره لتكمل المستخدمة الجملة
   function handleQuickPrompt(text: string) {
-    setMessage((prev) => {
-      if (!prev.trim()) return text;
-      const needsSpace = !prev.endsWith(" ");
-      return `${prev}${needsSpace ? " " : ""}${text}`;
-    });
+    setMessage(text);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (el) {
