@@ -9,13 +9,13 @@ import { Bot } from "lucide-react";
 const baseItems = [
   { to: "/home", label: "الرئيسية", icon: Home },
   { to: "/workouts", label: "تمارين", icon: Dumbbell },
-
+{ to: "/search", label: "بحث", icon: Search },
   // 👇👇👇 هذا هو الشاتبوت
   { to: "/ai-coach", label: "AIVA", icon: Bot },
 
-  { to: "/nutrition", label: "تغذيتي", icon: Apple },
-  { to: "/trainers", label: "مدربات", icon: Users },
-  { to: "/search", label: "بحث", icon: Search },
+  //{ to: "/nutrition", label: "تغذيتي", icon: Apple },
+  //{ to: "/trainers", label: "مدربات", icon: Users },
+  
   { to: "/profile", label: "ملفي", icon: User },
 ] as const;
 
