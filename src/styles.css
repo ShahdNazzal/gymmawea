@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
---font-sans: "Tajawal", "Cairo", ui-sans-serif, system-ui, sans-serif;
---font-display: "El Messiri", "Cairo", "Tajawal", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Tajawal", "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "El Messiri", "Cairo", "Tajawal", ui-sans-serif, system-ui, sans-serif;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -54,111 +54,147 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  --shadow-soft: 0 4px 20px -8px oklch(0.75 0.08 15 / 0.25);
-  --shadow-elegant: 0 20px 50px -20px oklch(0.65 0.12 15 / 0.35);
-  --shadow-glow: 0 0 40px oklch(0.85 0.10 20 / 0.4);
+  --shadow-soft: 0 8px 30px -12px oklch(0.20 0.03 320 / 0.35);
+  --shadow-elegant: 0 25px 60px -20px oklch(0.18 0.05 320 / 0.45);
+  --shadow-glow: 0 0 45px oklch(0.62 0.18 340 / 0.35);
 }
 
 :root {
-  --radius: 1rem;
+  --radius: 1.1rem;
 
-  /* Feminine pastel palette */
-  --background: oklch(0.995 0.005 60);      /* soft cream white */
-  --foreground: oklch(0.25 0.03 15);         /* deep warm charcoal */
+  /* ===== لوكس فيتنس — لوحة ألوان فاخرة عصرية، نسائية بس قوية ورياضية ===== */
+  --background: oklch(0.985 0.006 90);        /* أبيض عاجي دافئ نظيف */
+  --foreground: oklch(0.19 0.02 300);          /* بنفسجي غامق قريب من الأسود، مش أسود صرف */
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.25 0.03 15);
+  --card-foreground: oklch(0.19 0.02 300);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.03 15);
+  --popover-foreground: oklch(0.19 0.02 300);
 
-  --primary: oklch(0.68 0.16 15);            /* confident rose accent (CTA) */
-  --primary-foreground: oklch(0.99 0.005 60);
-  --primary-glow: oklch(0.78 0.14 20);
+  --primary: oklch(0.52 0.19 340);             /* ماجنتا/توت غامق فاخر — بديل عصري للوردي التقليدي */
+  --primary-foreground: oklch(0.99 0.005 90);
+  --primary-glow: oklch(0.70 0.17 15);         /* توهج مرجاني-وردي دافئ للتدرجات */
 
-  --secondary: oklch(0.95 0.02 25);          /* blush */
-  --secondary-foreground: oklch(0.35 0.05 15);
+  --secondary: oklch(0.95 0.02 300);           /* لافندر فاتح جداً */
+  --secondary-foreground: oklch(0.28 0.05 310);
 
-  --muted: oklch(0.96 0.01 40);              /* warm greige */
-  --muted-foreground: oklch(0.48 0.02 20);
+  --muted: oklch(0.96 0.008 90);               /* بيج/رمادي دافئ محايد */
+  --muted-foreground: oklch(0.46 0.02 300);
 
-  --accent: oklch(0.92 0.04 20);             /* soft rose */
-  --accent-foreground: oklch(0.30 0.05 15);
+  --accent: oklch(0.90 0.05 30);               /* مرجاني فاتح — لمسة طاقة ودفء */
+  --accent-foreground: oklch(0.30 0.06 320);
 
-  --destructive: oklch(0.60 0.22 27);
-  --destructive-foreground: oklch(0.99 0.005 60);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0.005 90);
 
-  --border: oklch(0.92 0.015 30);
-  --input: oklch(0.94 0.012 30);
-  --ring: oklch(0.72 0.14 18);
+  --border: oklch(0.90 0.015 300);
+  --input: oklch(0.93 0.012 300);
+  --ring: oklch(0.58 0.17 340);
 
-  --blush: oklch(0.94 0.035 20);
-  --cream: oklch(0.98 0.012 70);
-  --rose: oklch(0.82 0.09 15);
-  --greige: oklch(0.90 0.012 50);
+  --blush: oklch(0.93 0.04 330);
+  --cream: oklch(0.97 0.015 80);
+  --rose: oklch(0.68 0.15 15);
+  --greige: oklch(0.89 0.012 60);
 
-  --chart-1: oklch(0.68 0.16 15);
-  --chart-2: oklch(0.75 0.10 40);
-  --chart-3: oklch(0.65 0.08 200);
-  --chart-4: oklch(0.72 0.12 320);
-  --chart-5: oklch(0.60 0.14 60);
+  --chart-1: oklch(0.52 0.19 340);
+  --chart-2: oklch(0.70 0.17 15);
+  --chart-3: oklch(0.60 0.14 250);
+  --chart-4: oklch(0.75 0.14 90);
+  --chart-5: oklch(0.55 0.16 200);
 
-  --sidebar: oklch(0.98 0.008 30);
-  --sidebar-foreground: oklch(0.25 0.03 15);
-  --sidebar-primary: oklch(0.68 0.16 15);
-  --sidebar-primary-foreground: oklch(0.99 0.005 60);
-  --sidebar-accent: oklch(0.94 0.02 25);
-  --sidebar-accent-foreground: oklch(0.30 0.05 15);
-  --sidebar-border: oklch(0.92 0.015 30);
-  --sidebar-ring: oklch(0.72 0.14 18);
+  --sidebar: oklch(0.98 0.008 90);
+  --sidebar-foreground: oklch(0.19 0.02 300);
+  --sidebar-primary: oklch(0.52 0.19 340);
+  --sidebar-primary-foreground: oklch(0.99 0.005 90);
+  --sidebar-accent: oklch(0.93 0.04 330);
+  --sidebar-accent-foreground: oklch(0.28 0.05 310);
+  --sidebar-border: oklch(0.90 0.015 300);
+  --sidebar-ring: oklch(0.58 0.17 340);
 }
 
 .dark {
-  --background: oklch(0.18 0.015 15);
-  --foreground: oklch(0.96 0.010 40);
-  --card: oklch(0.22 0.020 15);
-  --card-foreground: oklch(0.96 0.010 40);
-  --popover: oklch(0.22 0.020 15);
-  --popover-foreground: oklch(0.96 0.010 40);
-  --primary: oklch(0.75 0.14 18);
-  --primary-foreground: oklch(0.18 0.015 15);
-  --primary-glow: oklch(0.82 0.12 22);
-  --secondary: oklch(0.28 0.025 15);
-  --secondary-foreground: oklch(0.96 0.010 40);
-  --muted: oklch(0.26 0.020 20);
-  --muted-foreground: oklch(0.72 0.015 30);
-  --accent: oklch(0.32 0.035 20);
-  --accent-foreground: oklch(0.96 0.010 40);
-  --destructive: oklch(0.65 0.22 25);
-  --destructive-foreground: oklch(0.96 0.010 40);
-  --border: oklch(0.30 0.02 20);
-  --input: oklch(0.30 0.02 20);
-  --ring: oklch(0.75 0.14 18);
-  --blush: oklch(0.32 0.035 20);
-  --cream: oklch(0.24 0.020 30);
-  --rose: oklch(0.55 0.10 15);
-  --greige: oklch(0.28 0.015 40);
-  --sidebar: oklch(0.20 0.020 15);
-  --sidebar-foreground: oklch(0.96 0.010 40);
-  --sidebar-primary: oklch(0.75 0.14 18);
-  --sidebar-primary-foreground: oklch(0.18 0.015 15);
-  --sidebar-accent: oklch(0.28 0.025 15);
-  --sidebar-accent-foreground: oklch(0.96 0.010 40);
-  --sidebar-border: oklch(0.30 0.02 20);
-  --sidebar-ring: oklch(0.75 0.14 18);
+  /* أسود بنفسجي عميق فاخر بدل الأسود العادي — إحساس "استوديو رياضي فخم" */
+  --background: oklch(0.14 0.025 300);
+  --foreground: oklch(0.97 0.01 90);
+  --card: oklch(0.19 0.03 305);
+  --card-foreground: oklch(0.97 0.01 90);
+  --popover: oklch(0.19 0.03 305);
+  --popover-foreground: oklch(0.97 0.01 90);
+
+  --primary: oklch(0.72 0.18 340);             /* ماجنتا مضيء واضح على الخلفية الغامقة */
+  --primary-foreground: oklch(0.14 0.025 300);
+  --primary-glow: oklch(0.80 0.15 20);
+
+  --secondary: oklch(0.26 0.04 305);
+  --secondary-foreground: oklch(0.97 0.01 90);
+
+  --muted: oklch(0.24 0.025 300);
+  --muted-foreground: oklch(0.72 0.02 90);
+
+  --accent: oklch(0.32 0.06 340);
+  --accent-foreground: oklch(0.97 0.01 90);
+
+  --destructive: oklch(0.66 0.22 25);
+  --destructive-foreground: oklch(0.97 0.01 90);
+
+  --border: oklch(0.30 0.035 305);
+  --input: oklch(0.28 0.035 305);
+  --ring: oklch(0.72 0.18 340);
+
+  --blush: oklch(0.30 0.06 335);
+  --cream: oklch(0.22 0.03 90);
+  --rose: oklch(0.62 0.14 15);
+  --greige: oklch(0.27 0.02 60);
+
+  --sidebar: oklch(0.16 0.03 305);
+  --sidebar-foreground: oklch(0.97 0.01 90);
+  --sidebar-primary: oklch(0.72 0.18 340);
+  --sidebar-primary-foreground: oklch(0.14 0.025 300);
+  --sidebar-accent: oklch(0.28 0.05 335);
+  --sidebar-accent-foreground: oklch(0.97 0.01 90);
+  --sidebar-border: oklch(0.30 0.035 305);
+  --sidebar-ring: oklch(0.72 0.18 340);
 }
 
+/* ===== تدرجات وتأثيرات — نفس أسماء الـ utilities القديمة، بمظهر أفخم ===== */
 @utility gradient-primary {
-  background-image: linear-gradient(135deg, var(--primary) 0%, var(--primary-glow) 100%);
+  background-image: linear-gradient(135deg, var(--primary) 0%, var(--primary-glow) 55%, var(--rose) 100%);
 }
 
 @utility gradient-blush {
-  background-image: linear-gradient(160deg, var(--blush) 0%, var(--cream) 50%, var(--secondary) 100%);
+  background-image: linear-gradient(160deg, var(--blush) 0%, var(--cream) 45%, var(--secondary) 100%);
 }
 
 @utility glass {
-  background-color: color-mix(in oklab, var(--card) 70%, transparent);
-  backdrop-filter: blur(16px);
-  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  background-color: color-mix(in oklab, var(--card) 62%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid color-mix(in oklab, var(--primary) 18%, var(--border) 82%);
+}
+
+/* تدرجات ولمسات فخامة إضافية — تُستخدم اختيارياً بدون ما تكسر أي شيء موجود */
+@utility gradient-mesh {
+  background-image:
+    radial-gradient(circle at 15% 20%, color-mix(in oklab, var(--primary) 30%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 85% 0%, color-mix(in oklab, var(--primary-glow) 30%, transparent) 0%, transparent 50%),
+    radial-gradient(circle at 50% 100%, color-mix(in oklab, var(--rose) 22%, transparent) 0%, transparent 55%);
+}
+
+@utility gradient-text {
+  background-image: linear-gradient(135deg, var(--primary) 0%, var(--primary-glow) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+@utility card-glow {
+  box-shadow: var(--shadow-soft);
+  transition: box-shadow 0.35s ease, transform 0.35s ease, border-color 0.35s ease;
+
+  &:hover {
+    box-shadow: var(--shadow-elegant), var(--shadow-glow);
+    transform: translateY(-2px);
+  }
 }
 
 @layer base {
@@ -167,17 +203,48 @@
   }
   html {
     direction: rtl;
+    scroll-behavior: smooth;
   }
   body {
-    background: linear-gradient(180deg, var(--cream) 0%, var(--background) 100%);
+    background:
+      radial-gradient(circle at 10% -10%, color-mix(in oklab, var(--primary) 8%, transparent) 0%, transparent 40%),
+      radial-gradient(circle at 100% 0%, color-mix(in oklab, var(--primary-glow) 10%, transparent) 0%, transparent 45%),
+      linear-gradient(180deg, var(--cream) 0%, var(--background) 55%);
+    background-attachment: fixed;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     font-weight: 700;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
+  }
+
+  /* تحسينات عامة عصرية بدون تعديل أي مكوّن أو منطق */
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 35%, transparent);
+    color: var(--foreground);
+  }
+
+  a, button {
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--primary) 35%, var(--muted) 65%);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--primary) 55%, var(--muted) 45%);
   }
 }
