@@ -54,10 +54,12 @@ function buildWeekSlots(plan: any): WeekSlot[] {
     const sorted = [...rawDays].sort((a, b) => a.day_of_week - b.day_of_week);
     return sorted.map((d) => {
       const itemsCount = Array.isArray(d.items) ? d.items.length : 0;
+      const isRest = !!d.is_rest || itemsCount === 0;
       return {
         label: DAYS[d.day_of_week],
-        isRest: !!d.is_rest || itemsCount === 0,
-        subtitle: !d.is_rest && itemsCount > 0 ? `${itemsCount} تمارين` : undefined,
+        isRest,
+        // بدل ما نعرض "4 تمارين" منعرض اسم العضلة المحفوظ فعلياً باليوم (مثلاً: أرجل)
+        subtitle: !isRest ? (d.muscle_group?.trim() || `${itemsCount} تمارين`) : undefined,
       };
     });
   }
@@ -229,41 +231,42 @@ function ProfilePage() {
       )}
 
       {/* الجدول الأسبوعي - المصدر الوحيد هلأ هو الخطة المعتمدة حالياً */}
-      <Card className="p-5 rounded-3xl">
-        <div className="flex items-center justify-between mb-5">
-          <div className="font-bold text-sm flex items-center gap-2">
-            <Calendar className="w-4 h-4" /> جدولي الأسبوعي
-          </div>
-          <Link to="/workouts" className="text-xs text-primary font-semibold">
-            تعديل
-          </Link>
+      {/* الجدول الأسبوعي - المصدر الوحيد هلأ هو الخطة المعتمدة حالياً */}
+<Card className="p-5 rounded-3xl">
+  <div className="flex items-center justify-between mb-5">
+    <div className="font-bold text-sm flex items-center gap-2">
+      <Calendar className="w-4 h-4" /> جدولي الأسبوعي
+    </div>
+    <Link to="/workouts" className="text-xs text-primary font-semibold">
+      تعديل
+    </Link>
+  </div>
+
+  {!activePlan ? (
+    <p className="text-xs text-muted-foreground text-center py-8">
+      ما في خطة معتمدة حالياً — اعتمدي خطة من صفحة التمارين ليظهر جدولك هون تلقائياً
+    </p>
+  ) : (
+    <>
+      {/* عرض اللابتوب/الشاشات الكبيرة: صف واحد أفقي كامل، بنفس التصميم الأصلي */}
+      <div className="hidden sm:block relative">
+        <div className="absolute top-7 left-0 right-0 h-[2px] bg-border z-0" />
+        <div className="flex justify-between items-end gap-2 relative z-10">
+          {weekSlots.map((slot, i) => (
+            <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
+          ))}
         </div>
+      </div>
 
-        {!activePlan ? (
-          <p className="text-xs text-muted-foreground text-center py-8">
-            ما في خطة معتمدة حالياً — اعتمدي خطة من صفحة التمارين ليظهر جدولك هون تلقائياً
-          </p>
-        ) : (
-          <>
-            {/* عرض اللابتوب/الشاشات الكبيرة: صف واحد أفقي كامل، بنفس التصميم الأصلي */}
-            <div className="hidden sm:block relative">
-              <div className="absolute top-6 left-0 right-0 h-[2px] bg-border z-0" />
-              <div className="flex justify-between gap-2 relative z-10">
-                {weekSlots.map((slot, i) => (
-                  <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
-                ))}
-              </div>
-            </div>
-
-            {/* عرض الموبايل: صفين (4 + 3) لأنه الشاشة عمودية الشكل */}
-            <div className="sm:hidden grid grid-cols-4 gap-3">
-              {weekSlots.map((slot, i) => (
-                <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
-              ))}
-            </div>
-          </>
-        )}
-      </Card>
+      {/* عرض الموبايل: صفين (4 + 3) لأنه الشاشة عمودية الشكل */}
+      <div className="sm:hidden grid grid-cols-4 gap-3 items-end">
+        {weekSlots.map((slot, i) => (
+          <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
+        ))}
+      </div>
+    </>
+  )}
+</Card>
 
       {/* لايتبوكس بسيط لعرض المنشور موسّعاً */}
       <AnimatePresence>
@@ -312,16 +315,17 @@ function WeekDayCell({ slot, isToday }: { slot: WeekSlot; isToday: boolean }) {
   return (
     <div className="flex flex-col items-center flex-1">
       <div
-        className={`w-14 h-14 flex items-center justify-center rounded-full text-[10px] font-bold text-center leading-tight px-1
+        className={`flex items-center justify-center rounded-full font-bold text-center leading-tight px-1 transition-all
+        ${isToday ? "w-[4.5rem] h-[4.5rem] text-[12px] ring-2 ring-primary shadow-lg shadow-primary/20" : "w-14 h-14 text-[10px]"}
         ${slot.isRest ? "bg-muted text-muted-foreground" : "gradient-primary text-white"}
-        ${isToday ? "ring-2 ring-primary scale-110" : ""}
       `}
       >
         {slot.label}
       </div>
 
       <div
-        className={`mt-3 w-full text-center px-2 py-2 rounded-xl text-[11px] leading-tight
+        className={`mt-3 w-full text-center px-2 py-2 rounded-xl leading-tight
+        ${isToday ? "text-[12px] font-bold" : "text-[11px]"}
         ${slot.isRest ? "text-muted-foreground" : "bg-primary/10 text-primary font-semibold"}`}
       >
         {slot.isRest ? "راحة" : (slot.subtitle ?? "تمرين")}

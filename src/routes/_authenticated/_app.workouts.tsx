@@ -541,7 +541,9 @@ function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any;
               className={`p-2 rounded-xl text-[10px] ${d.is_rest ? "bg-muted text-muted-foreground" : "gradient-primary text-primary-foreground"}`}
             >
               <div className="font-bold">{DAYS_SHORT[d.day_of_week]}</div>
-              <div className="mt-1 truncate">{d.is_rest ? "راحة" : `${(d.items ?? []).length} تمارين`}</div>
+              <div className="mt-1 truncate">
+                {d.is_rest ? "راحة" : d.muscle_group || `${(d.items ?? []).length} تمارين`}
+              </div>
             </div>
           ))}
         </div>
@@ -552,7 +554,9 @@ function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any;
           const isRest = !!d.is_rest;
           const items = Array.isArray(d.items) ? d.items : [];
           const isOpen = openIdx === i;
-          const label = fixedWeek ? DAYS[d.day_of_week] : (d.name ?? `اليوم ${i + 1}`);
+          // اسم اليوم الظاهر: "الأحد - قلوتس" لو محدد اسم عضلة، وإلا اسم اليوم لحاله
+          const dayName = fixedWeek ? DAYS[d.day_of_week] : (d.name ?? `اليوم ${i + 1}`);
+          const label = !isRest && d.muscle_group ? `${dayName} - ${d.muscle_group}` : dayName;
 
           return (
             <div key={i} className="rounded-2xl overflow-hidden bg-muted/50">
@@ -681,14 +685,15 @@ function SwitchDialog({ open, onClose, userId, activeId, onSwitched, currentSele
 }
 
 type NewPlanExercise = { name: string; sets: number; reps: number; video_url: string; instruction: string; tips: string };
-type NewPlanDay = { day_of_week: number; is_rest: boolean; items: NewPlanExercise[] };
+// muscle_group: اسم العضلة/التمرين الخاص باليوم، يظهر بشكل "الأحد - قلوتس" لما اليوم مش يوم راحة
+type NewPlanDay = { day_of_week: number; is_rest: boolean; muscle_group: string; items: NewPlanExercise[] };
 
 function emptyExercise(): NewPlanExercise {
   return { name: "", sets: 3, reps: 12, video_url: "", instruction: "", tips: "" };
 }
 
 function defaultDays(): NewPlanDay[] {
-  return DAYS.map((_, i) => ({ day_of_week: i, is_rest: true, items: [] }));
+  return DAYS.map((_, i) => ({ day_of_week: i, is_rest: true, muscle_group: "", items: [] }));
 }
 
 function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
@@ -724,6 +729,7 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
           sorted.map((d) => ({
             day_of_week: Number(d.day_of_week),
             is_rest: !!d.is_rest,
+            muscle_group: d.muscle_group ?? "",
             items: Array.isArray(d.items)
               ? d.items.map((ex: any) => ({
                   name: ex.name ?? "",
@@ -743,6 +749,7 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
           raw.map((d, i) => ({
             day_of_week: d.day_of_week != null ? Number(d.day_of_week) : i,
             is_rest: !!d.is_rest,
+            muscle_group: d.muscle_group ?? "",
             items: Array.isArray(d.items)
               ? d.items.map((ex: any) => ({
                   name: ex.name ?? "",
@@ -799,9 +806,13 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
           tips: ex.tips?.trim() || null,
         }));
       const isRest = d.is_rest || items.length === 0;
+      const muscleGroup = !isRest ? d.muscle_group?.trim() || null : null;
+      // اسم اليوم المركّب يلي بيتخزن وبيظهر بكل مكان: "الأحد - قلوتس"
+      const dayLabel = muscleGroup ? `${DAYS[d.day_of_week]} - ${muscleGroup}` : DAYS[d.day_of_week];
       return {
         day_of_week: d.day_of_week,
-        name: DAYS[d.day_of_week],
+        name: dayLabel,
+        muscle_group: muscleGroup,
         is_rest: isRest,
         items: isRest ? [] : items,
       };
@@ -918,7 +929,12 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
             {days.map((d, di) => (
               <Card key={di} className="p-3 rounded-2xl">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="font-bold text-sm">{DAYS[d.day_of_week]}</div>
+                  <div className="font-bold text-sm">
+                    {DAYS[d.day_of_week]}
+                    {!d.is_rest && d.muscle_group?.trim() && (
+                      <span className="text-primary"> - {d.muscle_group.trim()}</span>
+                    )}
+                  </div>
                   <label className="flex items-center gap-2 text-xs font-semibold">
                     <input
                       type="checkbox"
@@ -932,6 +948,14 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
 
                 {!d.is_rest && (
                   <div className="space-y-2">
+                    {/* اسم العضلة/التمرين الخاص باليوم — هاد يلي بيبني "الأحد - قلوتس" */}
+                    <Input
+                      value={d.muscle_group}
+                      onChange={(e) => updateDay(di, { muscle_group: e.target.value })}
+                      placeholder="اسم العضلة أو التمرين لهاليوم (مثلاً: قلوتس، أرجل، صدر، ظهر)"
+                      className="rounded-xl h-9"
+                    />
+
                     {d.items.length === 0 && (
                       <p className="text-[11px] text-muted-foreground">ما في تمارين بعد لهاد اليوم</p>
                     )}
