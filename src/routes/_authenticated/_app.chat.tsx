@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -15,6 +15,15 @@ const db = supabase as any;
 
 export const Route = createFileRoute("/_authenticated/_app/chat")({
   head: () => ({ meta: [{ title: "الشات — جمّاوية" }] }),
+  // بندعم رابط مباشر لمحادثة معينة: /chat?with=USER_ID
+  // هيك لما نكبس "رسالة" من بروفايل حدا، منروح عالشات معه مباشرة
+  // بدل ما نطلع على قائمة كل المحادثات.
+  // ملاحظة مهمة: لازم نرجّع "with" كمفتاح اختياري (with?) مش كقيمة ممكن تكون undefined،
+  // وإلا TypeScript بيصير يطلب تمرير search بكل مكان فيه Link/navigate لـ /chat حتى لو مش لازم.
+  validateSearch: (search: Record<string, unknown>): { with?: string } => {
+    const withId = typeof search.with === "string" ? search.with : undefined;
+    return withId ? { with: withId } : {};
+  },
   component: ChatPage,
 });
 
@@ -27,6 +36,8 @@ type ConvMeta = {
 
 function ChatPage() {
   const { user, role } = useAuth();
+  const navigate = useNavigate();
+  const { with: directId } = Route.useSearch();
   const [convs, setConvs] = useState<any[]>([]);
   const [convsMeta, setConvsMeta] = useState<Record<string, ConvMeta>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -81,20 +92,9 @@ function ChatPage() {
           (p) => p.id !== user.id && !trainerIds.has(p.id)
         );
       } else {
-        // العضوة: بتشوف كل المدربات مباشرة
-        const { data: trainerRoles } = await supabase
-          .from("user_roles")
-          .select("user_id")
-          .eq("role", "trainer");
-        const trainerIds = (trainerRoles ?? []).map((r) => r.user_id);
-
-        if (trainerIds.length > 0) {
-          const { data: profs } = await supabase
-            .from("profiles")
-            .select("*")
-            .in("id", trainerIds);
-          members = profs ?? [];
-        }
+        // العضوة: صار فيها تراسل أي حدا مسجّل بالتطبيق (مدربات وأعضاء)، مش بس المدربات متل قبل
+        const { data: allProfiles } = await supabase.from("profiles").select("*");
+        members = (allProfiles ?? []).filter((p) => p.id !== user.id);
       }
 
       setConvs(members);
@@ -156,13 +156,26 @@ function ChatPage() {
     setConvsMeta((prev) => (prev[otherId] ? { ...prev, [otherId]: { ...prev[otherId], unread: false } } : prev));
   };
 
+  // المحادثة الفعّالة حالياً: إما محادثة اخترناها من القائمة، أو محادثة جاية من رابط مباشر (?with=)
+  const activeOtherId = selected ?? directId;
+
+  // TODO: احذفي هالسطر بعد التشخيص. إذا directId طلعت undefined رغم إنه بالـ URL
+  // فوق كتوب /chat?with=xxxx، معناها المشكلة بجزء الراوتينغ (routeTree.gen.ts قديم).
+  console.log("[debug chat] directId من الرابط =", directId, "| activeOtherId =", activeOtherId);
+
   const handleBack = () => {
+    if (directId) {
+      // إذا كنا جايين من رابط مباشر (مثلاً من صفحة بروفايل)، الرجوع لازم يشيل الـ query
+      // ويرجعنا لقائمة كل المحادثات، مش يفضل يفتح نفس الشخص من جديد.
+      navigate({ to: "/chat" });
+      return;
+    }
     setSelected(null);
     // نحدّث حالة القراءة/المعاينة لما نرجع من المحادثة
     if (user) loadConvsMeta(user.id, convs.map((c) => c.id));
   };
 
-  if (selected) return <ChatView userId={user!.id} otherId={selected} onBack={handleBack} />;
+  if (activeOtherId) return <ChatView userId={user!.id} otherId={activeOtherId} onBack={handleBack} />;
 
   return (
     <div className="space-y-4">
@@ -174,7 +187,7 @@ function ChatPage() {
         <Card className="p-8 text-center rounded-3xl border-dashed">
           <MessageCircle className="w-12 h-12 mx-auto text-muted-foreground mb-2" />
           <p className="text-sm text-muted-foreground">
-            {role === "trainer" ? "لا يوجد أعضاء بعد" : "لا يوجد مدربات مسجلات بعد"}
+            {role === "trainer" ? "لا يوجد أعضاء بعد" : "لا يوجد أعضاء أو مدربات مسجلات بعد"}
           </p>
         </Card>
       )}

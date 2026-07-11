@@ -119,7 +119,16 @@ function TrainerProfile() {
             <Button onClick={toggleFollow} variant={following ? "outline" : "default"} className="rounded-2xl gradient-primary">
               {following ? <><UserCheck className="w-4 h-4 ml-1" /> متابَعة</> : <><UserPlus className="w-4 h-4 ml-1" /> متابعة</>}
             </Button>
-            <Button onClick={() => navigate({ to: "/chat" })} variant="outline" className="rounded-2xl">
+            {/* بدل ما نودّي على قائمة الشات، منروح مباشرة عالمحادثة مع هالمدربة */}
+            <Button
+              onClick={() => {
+                // TODO: احذفي هالسطر بعد ما تتأكدي إنه الرابط عم يتولد صح
+                console.log("[debug trainer] كبست رسالة، id المدربة =", id, "→ رايحين لـ /chat?with=" + id);
+                navigate({ to: "/chat", search: { with: id } });
+              }}
+              variant="outline"
+              className="rounded-2xl"
+            >
               <MessageCircle className="w-4 h-4 ml-1" /> رسالة
             </Button>
           </div>

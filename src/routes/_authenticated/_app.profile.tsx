@@ -140,56 +140,57 @@ function ProfilePage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-extrabold">ملفي</h1>
-        <div className="flex gap-2">
-          {user && <Link to="/u/$id" params={{ id: user.id }} className="text-xs text-primary font-semibold self-center">عرض للعامة</Link>}
-          <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/settings" })} className="rounded-xl">
+      </div>
+
+      {/* بطاقة البروفايل — بنفس ستايل صفحة العرض العام (gradient-blush) لتناسق التصميم بين الوضعين */}
+      {/* ملاحظة: هاي صفحتك الخاصة، فما في كبسة "رسالة"/"متابعة" هون أبداً — هاي بتظهر فقط بصفحة العرض العام لأي شخص تاني */}
+      <Card className="p-6 rounded-3xl gradient-blush border-none">
+        <div className="flex items-center gap-4">
+          <button onClick={() => avatarInput.current?.click()} className="relative shrink-0">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="avatar" className="w-20 h-20 rounded-3xl object-cover" />
+            ) : (
+              <div className="w-20 h-20 rounded-3xl gradient-primary flex items-center justify-center text-3xl font-extrabold text-primary-foreground">
+                {profile?.full_name?.[0] ?? "؟"}
+              </div>
+            )}
+            <div className="absolute -bottom-1 -left-1 bg-white rounded-full p-1.5 shadow-soft"><Camera className="w-3.5 h-3.5" /></div>
+            <input ref={avatarInput} type="file" accept="image/*" className="hidden" onChange={onAvatar} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="font-extrabold text-xl truncate">{profile?.full_name}</div>
+            <div className="text-xs text-primary font-semibold mt-0.5">
+              {role === "trainer" ? "مدربة معتمدة" : "عضوة"}
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => navigate({ to: "/settings" })} className="rounded-xl shrink-0">
             <SettingsIcon className="w-5 h-5" />
           </Button>
         </div>
-      </div>
 
-      {/* بطاقة البروفايل بشكل أقرب لانستقرام */}
-      <Card className="rounded-3xl border-none shadow-soft overflow-hidden">
-        <div className="h-16 gradient-primary" />
-        <div className="p-6 pt-0 -mt-10">
-          <div className="flex items-end gap-4">
-            <button onClick={() => avatarInput.current?.click()} className="relative shrink-0">
-              {profile?.avatar_url ? (
-                <img src={profile.avatar_url} alt="avatar" className="w-24 h-24 rounded-3xl object-cover border-4 border-background shadow-soft" />
-              ) : (
-                <div className="w-24 h-24 rounded-3xl gradient-primary flex items-center justify-center text-4xl font-extrabold text-primary-foreground border-4 border-background shadow-soft">
-                  {profile?.full_name?.[0] ?? "؟"}
-                </div>
-              )}
-              <div className="absolute -bottom-1 -left-1 bg-white rounded-full p-1.5 shadow-soft"><Camera className="w-3.5 h-3.5" /></div>
-              <input ref={avatarInput} type="file" accept="image/*" className="hidden" onChange={onAvatar} />
-            </button>
-            <div className="pb-1">
-              <div className="font-extrabold text-xl">{profile?.full_name}</div>
-              <div className="text-xs text-primary font-semibold mt-0.5">
-                {role === "trainer" ? "مدربة معتمدة" : "عضوة"}
-              </div>
-            </div>
+        {profile?.bio && <p className="text-sm mt-4 leading-relaxed">{profile.bio}</p>}
+
+        <div className="flex items-center gap-6 mt-4 pt-4 border-t border-black/5">
+          <div className="text-center">
+            <div className="font-extrabold text-lg">{posts.length}</div>
+            <div className="text-[11px] text-muted-foreground">منشور</div>
           </div>
-
-          {profile?.bio && <p className="text-sm mt-4 leading-relaxed text-muted-foreground">{profile.bio}</p>}
-
-          <div className="flex items-center gap-6 mt-4 pt-4 border-t">
-            <div className="text-center">
-              <div className="font-extrabold text-lg">{posts.length}</div>
-              <div className="text-[11px] text-muted-foreground">منشور</div>
-            </div>
-            <div className="text-center">
-              <div className="font-extrabold text-lg">{scheduledDaysCount}</div>
-              <div className="text-[11px] text-muted-foreground">أيام مجدولة</div>
-            </div>
-            {role === "user" && fp && (
-              <div className="text-center">
-                <div className="font-extrabold text-lg">{fp.weight} كغ</div>
-                <div className="text-[11px] text-muted-foreground">الوزن الحالي</div>
-              </div>
-            )}
+          <div className="text-center">
+            <div className="font-extrabold text-lg">{scheduledDaysCount}</div>
+            <div className="text-[11px] text-muted-foreground">أيام مجدولة</div>
           </div>
+          {role === "user" && fp && (
+            <div className="text-center">
+              <div className="font-extrabold text-lg">{fp.weight} كغ</div>
+              <div className="text-[11px] text-muted-foreground">الوزن الحالي</div>
+            </div>
+          )}
+          <div className="flex-1" />
+          {user && (
+            <Link to="/u/$id" params={{ id: user.id }} className="text-xs text-primary font-semibold self-center whitespace-nowrap">
+              عرض للعامة
+            </Link>
+          )}
         </div>
       </Card>
 
@@ -231,42 +232,41 @@ function ProfilePage() {
       )}
 
       {/* الجدول الأسبوعي - المصدر الوحيد هلأ هو الخطة المعتمدة حالياً */}
-      {/* الجدول الأسبوعي - المصدر الوحيد هلأ هو الخطة المعتمدة حالياً */}
-<Card className="p-5 rounded-3xl">
-  <div className="flex items-center justify-between mb-5">
-    <div className="font-bold text-sm flex items-center gap-2">
-      <Calendar className="w-4 h-4" /> جدولي الأسبوعي
-    </div>
-    <Link to="/workouts" className="text-xs text-primary font-semibold">
-      تعديل
-    </Link>
-  </div>
-
-  {!activePlan ? (
-    <p className="text-xs text-muted-foreground text-center py-8">
-      ما في خطة معتمدة حالياً — اعتمدي خطة من صفحة التمارين ليظهر جدولك هون تلقائياً
-    </p>
-  ) : (
-    <>
-      {/* عرض اللابتوب/الشاشات الكبيرة: صف واحد أفقي كامل، بنفس التصميم الأصلي */}
-      <div className="hidden sm:block relative">
-        <div className="absolute top-7 left-0 right-0 h-[2px] bg-border z-0" />
-        <div className="flex justify-between items-end gap-2 relative z-10">
-          {weekSlots.map((slot, i) => (
-            <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
-          ))}
+      <Card className="p-5 rounded-3xl">
+        <div className="flex items-center justify-between mb-5">
+          <div className="font-bold text-sm flex items-center gap-2">
+            <Calendar className="w-4 h-4" /> جدولي الأسبوعي
+          </div>
+          <Link to="/workouts" className="text-xs text-primary font-semibold">
+            تعديل
+          </Link>
         </div>
-      </div>
 
-      {/* عرض الموبايل: صفين (4 + 3) لأنه الشاشة عمودية الشكل */}
-      <div className="sm:hidden grid grid-cols-4 gap-3 items-end">
-        {weekSlots.map((slot, i) => (
-          <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
-        ))}
-      </div>
-    </>
-  )}
-</Card>
+        {!activePlan ? (
+          <p className="text-xs text-muted-foreground text-center py-8">
+            ما في خطة معتمدة حالياً — اعتمدي خطة من صفحة التمارين ليظهر جدولك هون تلقائياً
+          </p>
+        ) : (
+          <>
+            {/* عرض اللابتوب/الشاشات الكبيرة: صف واحد أفقي كامل، بنفس التصميم الأصلي */}
+            <div className="hidden sm:block relative">
+              <div className="absolute top-7 left-0 right-0 h-[2px] bg-border z-0" />
+              <div className="flex justify-between items-end gap-2 relative z-10">
+                {weekSlots.map((slot, i) => (
+                  <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
+                ))}
+              </div>
+            </div>
+
+            {/* عرض الموبايل: صفين (4 + 3) لأنه الشاشة عمودية الشكل */}
+            <div className="sm:hidden grid grid-cols-4 gap-3 items-end">
+              {weekSlots.map((slot, i) => (
+                <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
 
       {/* لايتبوكس بسيط لعرض المنشور موسّعاً */}
       <AnimatePresence>

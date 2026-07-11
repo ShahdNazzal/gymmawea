@@ -1,5 +1,3 @@
-//C:\Users\lenovo\Downloads\jammawia-main (1)\jammawia-main\src\routes\_authenticated\_app.u.$id.tsx
-
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -58,6 +56,11 @@ function PublicUserProfile() {
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
 
   const isOwnProfile = currentUser?.id === id;
+
+  // TODO: احذفي هالسطر بعد التشخيص. إذا isOwnProfile طلعت true وانتِ متأكدة إنك
+  // فاتحة بروفايل حدا تاني (مش حسابك)، معناها currentUser.id مش عم يتحدث صح
+  // (مشكلة بـ useAuth مثلاً)، أو إنك فعلياً فاتحة نفس حسابك بمتصفح تاني/تبويب تاني.
+  console.log("[debug u.$id] currentUser.id =", currentUser?.id, "| profile id (بالرابط) =", id, "| isOwnProfile =", isOwnProfile);
 
   const loadPosts = async (profileData: any) => {
     setLoadingPosts(true);
@@ -187,6 +190,23 @@ function PublicUserProfile() {
               <div className="text-[11px] text-muted-foreground">خطة تمرين</div>
             </div>
           </div>
+
+          {/* زر الرسالة - يظهر بس للزوار (مش لصاحبة الحساب نفسها)
+              وبيفتح المحادثة مع هالشخص مباشرة، مش قائمة الشات كاملة */}
+          {!isOwnProfile && (
+            <div className="mt-4 pt-4 border-t">
+              <Button
+                onClick={() => {
+                  // TODO: احذفي هالسطر بعد ما تتأكدي إنه الرابط عم يتولد صح
+                  console.log("[debug u.$id] كبست رسالة، id =", id, "→ رايحين لـ /chat?with=" + id);
+                  navigate({ to: "/chat", search: { with: id } });
+                }}
+                className="w-full rounded-2xl gradient-primary"
+              >
+                <MessageCircle className="w-4 h-4 ml-1" /> رسالة
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
 
