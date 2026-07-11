@@ -101,19 +101,20 @@ function TrainerProfile() {
       <Card className="p-6 rounded-3xl gradient-blush border-none">
         <div className="flex items-center gap-4">
           {profile?.avatar_url ? (
-            <img src={profile.avatar_url} className="w-20 h-20 rounded-3xl object-cover" />
+            <img src={profile.avatar_url} className="w-20 h-20 rounded-3xl object-cover shrink-0" />
           ) : (
-            <div className="w-20 h-20 rounded-3xl gradient-primary text-primary-foreground flex items-center justify-center text-3xl font-extrabold">
+            <div className="w-20 h-20 rounded-3xl gradient-primary text-primary-foreground flex items-center justify-center text-3xl font-extrabold shrink-0">
               {profile?.full_name?.[0]}
             </div>
           )}
-          <div className="flex-1">
-            <div className="font-extrabold text-xl">{profile?.full_name}</div>
-            <div className="text-xs text-primary font-semibold">{trainer?.specialization}</div>
+          {/* min-w-0 + truncate عشان الاسم/التخصص الطويل ما يكسر التصميم عالموبايل */}
+          <div className="flex-1 min-w-0">
+            <div className="font-extrabold text-xl truncate">{profile?.full_name}</div>
+            <div className="text-xs text-primary font-semibold truncate">{trainer?.specialization}</div>
             <div className="text-xs text-muted-foreground mt-1">{trainer?.experience_years} سنوات خبرة</div>
           </div>
         </div>
-        {trainer?.bio && <p className="text-sm mt-4">{trainer.bio}</p>}
+        {trainer?.bio && <p className="text-sm mt-4 leading-relaxed">{trainer.bio}</p>}
         {user?.id !== id && (
           <div className="grid grid-cols-2 gap-2 mt-4">
             <Button onClick={toggleFollow} variant={following ? "outline" : "default"} className="rounded-2xl gradient-primary">
@@ -137,7 +138,7 @@ function TrainerProfile() {
 
       <div className="flex gap-2 p-1 bg-muted rounded-2xl">
         {(["posts", "workouts", "nutrition"] as const).map((k) => (
-          <button key={k} onClick={() => setTab(k)} className={`flex-1 py-2 rounded-xl text-xs font-semibold transition ${tab === k ? "bg-card shadow-soft" : "text-muted-foreground"}`}>
+          <button key={k} onClick={() => setTab(k)} className={`flex-1 py-2 rounded-xl text-[11px] sm:text-xs font-semibold transition truncate px-1 ${tab === k ? "bg-card shadow-soft" : "text-muted-foreground"}`}>
             {k === "posts" ? `منشورات (${posts.length})` : k === "workouts" ? `تمارين (${workouts.length})` : `تغذية (${nutrition.length})`}
           </button>
         ))}
@@ -189,19 +190,20 @@ function TrainerProfile() {
             <Card key={w.id} className="p-4 rounded-2xl">
               <div className="flex items-center gap-3">
                 {w.image_url ? (
-                  <img src={w.image_url} className="w-14 h-14 rounded-xl object-cover" />
+                  <img src={w.image_url} className="w-14 h-14 rounded-xl object-cover shrink-0" />
                 ) : (
-                  <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center"><Dumbbell className="w-5 h-5" /></div>
+                  <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center shrink-0"><Dumbbell className="w-5 h-5" /></div>
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="font-bold truncate">{w.name}</div>
                   <div className="text-xs text-muted-foreground">{(Array.isArray(w.exercises) ? w.exercises : []).length} يوم • {w.min_frequency}+/أسبوع</div>
                 </div>
-                {user?.id !== id && (
-                  <Button size="sm" onClick={() => adoptWorkout(w.id)} className="rounded-xl gradient-primary">اعتماد</Button>
-                )}
               </div>
               {w.description && <p className="text-xs text-muted-foreground mt-2">{w.description}</p>}
+              {/* زر الاعتماد صار full-width تحت المحتوى — مريح أكتر عالموبايل من زر ضيق جنب النص */}
+              {user?.id !== id && (
+                <Button size="sm" onClick={() => adoptWorkout(w.id)} className="rounded-xl gradient-primary w-full mt-3">اعتماد</Button>
+              )}
             </Card>
           ))}
         </div>
@@ -213,15 +215,15 @@ function TrainerProfile() {
           {nutrition.map((n) => (
             <Card key={n.id} className="p-4 rounded-2xl">
               <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center"><Apple className="w-5 h-5" /></div>
+                <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center shrink-0"><Apple className="w-5 h-5" /></div>
                 <div className="flex-1 min-w-0">
                   <div className="font-bold truncate">{n.name}</div>
                   <div className="text-xs text-muted-foreground">{n.min_calories}–{n.max_calories} سعرة • {(Array.isArray(n.meals) ? n.meals : []).length} وجبات</div>
                 </div>
-                {user?.id !== id && (
-                  <Button size="sm" onClick={() => adoptNutrition(n.id)} className="rounded-xl gradient-primary">اعتماد</Button>
-                )}
               </div>
+              {user?.id !== id && (
+                <Button size="sm" onClick={() => adoptNutrition(n.id)} className="rounded-xl gradient-primary w-full mt-3">اعتماد</Button>
+              )}
             </Card>
           ))}
         </div>

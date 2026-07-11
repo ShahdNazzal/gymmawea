@@ -277,9 +277,9 @@ function WorkoutsPage() {
       {/* عنصر الصوت مخفي دائمًا بالـ DOM حتى لو الديالوج مقفول */}
       <audio ref={timerAudioRef} src="/alarm.mp3" preload="auto" />
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-extrabold">تمارينك</h1>
-        <Button size="sm" variant="outline" onClick={() => setTimerOpen(true)} className="rounded-xl">
+        <Button size="sm" variant="outline" onClick={() => setTimerOpen(true)} className="rounded-xl shrink-0">
           <Timer className="w-4 h-4 ml-1" /> مؤقت
         </Button>
       </div>
@@ -288,7 +288,7 @@ function WorkoutsPage() {
 
       {/* جدولك الأسبوعي */}
       {!loading && (
-        <Card className="p-5 rounded-3xl">
+        <Card className="p-4 sm:p-5 rounded-3xl">
           <div className="font-bold text-sm flex items-center gap-2 mb-3">
             <Calendar className="w-4 h-4" /> جدولك الأسبوعي
           </div>
@@ -309,9 +309,9 @@ function WorkoutsPage() {
       )}
 
       <div className="pt-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-2">
           <h2 className="font-bold">خططي الشخصية</h2>
-          <Button size="sm" onClick={() => { setEditingPlan(null); setNewPlanOpen(true); }} className="rounded-xl gradient-primary">
+          <Button size="sm" onClick={() => { setEditingPlan(null); setNewPlanOpen(true); }} className="rounded-xl gradient-primary shrink-0">
             <Plus className="w-4 h-4 ml-1" /> إنشاء
           </Button>
         </div>
@@ -321,6 +321,7 @@ function WorkoutsPage() {
             <p className="text-sm text-muted-foreground">لا توجد خطط شخصية بعد</p>
           </Card>
         )}
+        {/* كل كارد بصير عمودي: صف فوق للمعلومات + زر التعديل، وصف تحت لأزرار التفعيل/الحذف full-width عشان يريح على الموبايل */}
         <div className="grid gap-2">
           {personalPlans.map((p) => {
             const daysCount = Array.isArray(p.exercises)
@@ -328,50 +329,63 @@ function WorkoutsPage() {
                 ? p.exercises.filter((d: any) => !d.is_rest).length
                 : p.exercises.length
               : 0;
+            const isActive = active?.workout_plan_id === p.id;
             return (
-              <Card key={p.id} className="p-3 rounded-2xl flex items-center gap-3">
-                {p.image_url ? (
-                  <img src={p.image_url} className="w-12 h-12 rounded-xl object-cover" />
-                ) : (
-                  <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center"><Dumbbell className="w-4 h-4" /></div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-sm truncate">{p.name}</div>
-                  <div className="text-[10px] text-muted-foreground">
-                    {daysCount} يوم تمرين • {p.is_public ? "عام" : "خاص"}
+              <Card key={p.id} className="p-3 rounded-2xl">
+                <div className="flex items-center gap-3">
+                  {p.image_url ? (
+                    <img src={p.image_url} className="w-12 h-12 rounded-xl object-cover shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center shrink-0"><Dumbbell className="w-4 h-4" /></div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm truncate">{p.name}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {daysCount} يوم تمرين • {p.is_public ? "عام" : "خاص"}
+                    </div>
                   </div>
+                  {/* زر التعديل يضل صغير جنب الاسم */}
+                  <button
+                    onClick={() => { setEditingPlan(p); setNewPlanOpen(true); }}
+                    className="p-1.5 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    title="تعديل الخطة"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
                 </div>
-                {/* زر التعديل */}
-                <button
-                  onClick={() => { setEditingPlan(p); setNewPlanOpen(true); }}
-                  className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                  title="تعديل الخطة"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <Button
-                  size="sm"
-                  variant={active?.workout_plan_id === p.id ? "default" : "outline"}
-                  onClick={async () => {
-                    await supabase.from("active_plan_selection").upsert({
-                      user_id: user!.id,
-                      workout_plan_type: "personal",
-                      workout_plan_id: p.id,
-                      nutrition_plan_type: active?.nutrition_plan_type,
-                      nutrition_plan_id: active?.nutrition_plan_id,
-                    });
-                    toast.success("تم تفعيل الخطة، وجدولك الأسبوعي تحدّث تلقائياً");
-                    loadAll();
-                  }}
-                  className="rounded-xl"
-                >
-                  {active?.workout_plan_id === p.id ? "نشطة" : "تفعيل"}
-                </Button>
-                <button onClick={async () => {
-                  if (!confirm("حذف الخطة؟")) return;
-                  await supabase.from("workouts").delete().eq("id", p.id);
-                  loadAll();
-                }} className="p-1 text-destructive"><Trash2 className="w-4 h-4" /></button>
+
+                {/* صف الأزرار تحت — full-width عالموبايل بدل ما تكون متلزقة بصف واحد */}
+                <div className="flex items-center gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant={isActive ? "default" : "outline"}
+                    onClick={async () => {
+                      await supabase.from("active_plan_selection").upsert({
+                        user_id: user!.id,
+                        workout_plan_type: "personal",
+                        workout_plan_id: p.id,
+                        nutrition_plan_type: active?.nutrition_plan_type,
+                        nutrition_plan_id: active?.nutrition_plan_id,
+                      });
+                      toast.success("تم تفعيل الخطة، وجدولك الأسبوعي تحدّث تلقائياً");
+                      loadAll();
+                    }}
+                    className="rounded-xl flex-1"
+                  >
+                    {isActive ? "نشطة" : "تفعيل"}
+                  </Button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm("حذف الخطة؟")) return;
+                      await supabase.from("workouts").delete().eq("id", p.id);
+                      loadAll();
+                    }}
+                    className="p-2.5 rounded-xl border border-destructive/30 text-destructive shrink-0"
+                    title="حذف الخطة"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </Card>
             );
           })}
@@ -645,20 +659,22 @@ function SwitchDialog({ open, onClose, userId, activeId, onSwitched, currentSele
         )}
         <div className="grid gap-2">
           {plans.map((p) => (
-            <Card key={p.id} className="p-3 rounded-2xl flex items-center gap-2">
-              {p.image_url ? (
-                <img src={p.image_url} className="w-12 h-12 rounded-xl object-cover" />
-              ) : (
-                <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center"><Dumbbell className="w-4 h-4" /></div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="font-bold text-sm truncate">{p.name}</div>
-                <div className="text-[11px] text-muted-foreground truncate">
-                  {p.profiles?.full_name && `${p.profiles.full_name} • `}
-                  {(Array.isArray(p.exercises) ? p.exercises : []).length} يوم
+            <Card key={p.id} className="p-3 rounded-2xl">
+              <div className="flex items-center gap-2">
+                {p.image_url ? (
+                  <img src={p.image_url} className="w-12 h-12 rounded-xl object-cover shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center shrink-0"><Dumbbell className="w-4 h-4" /></div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-sm truncate">{p.name}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {p.profiles?.full_name && `${p.profiles.full_name} • `}
+                    {(Array.isArray(p.exercises) ? p.exercises : []).length} يوم
+                  </div>
                 </div>
               </div>
-              <Button size="sm" variant={activeId === p.id ? "default" : "outline"} onClick={() => adopt(p.id)} className="rounded-xl shrink-0">
+              <Button size="sm" variant={activeId === p.id ? "default" : "outline"} onClick={() => adopt(p.id)} className="rounded-xl w-full mt-3">
                 {activeId === p.id ? "نشطة" : "اعتماد"}
               </Button>
             </Card>
@@ -913,14 +929,14 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
             <Label>أيام الأسبوع</Label>
             {days.map((d, di) => (
               <Card key={di} className="p-3 rounded-2xl">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                   <div className="font-bold text-sm">
                     {DAYS[d.day_of_week]}
                     {!d.is_rest && d.muscle_group?.trim() && (
                       <span className="text-primary"> - {d.muscle_group.trim()}</span>
                     )}
                   </div>
-                  <label className="flex items-center gap-2 text-xs font-semibold">
+                  <label className="flex items-center gap-2 text-xs font-semibold shrink-0">
                     <input
                       type="checkbox"
                       checked={d.is_rest}
@@ -946,31 +962,42 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
                     )}
                     {d.items.map((ex, ei) => (
                       <div key={ei} className="rounded-xl border border-border p-2 space-y-2">
-                        <div className="grid grid-cols-[1fr_50px_50px_auto] gap-2 items-center">
+                        {/* اسم التمرين بسطر لحاله مع زر الحذف — بدل عمود ضيق كان بينضغط عالموبايل */}
+                        <div className="flex items-start gap-2">
                           <Input
                             value={ex.name}
                             onChange={(e) => updateExercise(di, ei, { name: e.target.value })}
                             placeholder="اسم التمرين"
-                            className="rounded-xl h-9"
-                          />
-                          <Input
-                            type="number"
-                            value={ex.sets}
-                            onChange={(e) => updateExercise(di, ei, { sets: +e.target.value })}
-                            className="rounded-xl h-9 text-center"
-                          />
-                          <Input
-                            type="number"
-                            value={ex.reps}
-                            onChange={(e) => updateExercise(di, ei, { reps: +e.target.value })}
-                            className="rounded-xl h-9 text-center"
+                            className="rounded-xl h-9 flex-1"
                           />
                           <button
                             onClick={() => updateDay(di, { items: d.items.filter((_, j) => j !== ei) })}
-                            className="p-1"
+                            className="p-2 shrink-0 text-muted-foreground hover:text-destructive"
+                            title="حذف التمرين"
                           >
                             <X className="w-4 h-4" />
                           </button>
+                        </div>
+                        {/* المجموعات والتكرارات بصف مستقل مع Label واضح، مريح أكتر عالموبايل */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground">مجموعات</Label>
+                            <Input
+                              type="number"
+                              value={ex.sets}
+                              onChange={(e) => updateExercise(di, ei, { sets: +e.target.value })}
+                              className="rounded-xl h-9 text-center mt-1"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px] text-muted-foreground">تكرارات</Label>
+                            <Input
+                              type="number"
+                              value={ex.reps}
+                              onChange={(e) => updateExercise(di, ei, { reps: +e.target.value })}
+                              className="rounded-xl h-9 text-center mt-1"
+                            />
+                          </div>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Youtube className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -1043,7 +1070,7 @@ function RestTimerDialog({ open, onClose, timerRunning, timerSec, onStart, onSto
         </div>
 
         {!timerRunning && (
-          <div className="flex gap-2 justify-center">
+          <div className="flex gap-2 justify-center flex-wrap">
             {[30, 60, 90, 120].map((v) => (
               <Button
                 key={v}
