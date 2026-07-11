@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -64,53 +64,92 @@ type NutritionTargets = {
   goalLabel: string;
 };
 
+// نصنّف حالة الوزن حسب مؤشر كتلة الجسم (BMI) لأربع فئات: نحافة / وزن طبيعي / زيادة وزن / سمنة
+function classifyWeightStatus(weightKg: number, heightCm: number): "underweight" | "normal" | "overweight" | "obese" {
+  const heightM = heightCm / 100;
+  if (!heightM) return "normal";
+  const bmi = weightKg / (heightM * heightM);
+  if (bmi < 18.5) return "underweight";
+  if (bmi < 25) return "normal";
+  if (bmi < 30) return "overweight";
+  return "obese";
+}
+
+// نصنّف هدف المستخدمة (نص حر) لواحدة من أربع فئات: تضخيم / تنحيف / شد الجسم / لياقة
+function classifyGoalCategory(goal: string): "bulk" | "cut" | "toning" | "fitness" {
+  const g = String(goal || "").toLowerCase();
+  if (/gain|bulk|تضخيم/.test(g)) return "bulk";
+  if (/lose|تنحيف|فقدان|خسار/.test(g)) return "cut";
+  if (/شد|تنشيف|toning|recomp/.test(g)) return "toning";
+  // لياقة أو أي هدف غير محدد بوضوح، بنعتبرها "لياقة" كهدف عام افتراضي
+  return "fitness";
+}
+
+const GOAL_LABELS: Record<string, string> = {
+  bulk: "تضخيم",
+  cut: "تنحيف",
+  toning: "شد الجسم",
+  fitness: "لياقة",
+};
+
+// جدول مرجعي لأهداف السعرات والبروتين حسب تصنيف الوزن + الهدف (بروتين بالغرام، سعرات بالسعرة)
+// كل خانة عبارة عن مجال [أدنى, أعلى]، وبناخذ منتصف المجال كهدف يومي فعلي
+const NUTRITION_TABLE: Record<string, Record<string, { protein: [number, number]; calories: [number, number] }>> = {
+  underweight: {
+    bulk: { protein: [90, 120], calories: [2000, 2400] },
+    // بالنحافة، "شد الجسم" و"لياقة" مدموجين بنفس الأرقام بالجدول المرجعي
+    toning: { protein: [80, 100], calories: [1800, 2000] },
+    fitness: { protein: [80, 100], calories: [1800, 2000] },
+  },
+  normal: {
+    cut: { protein: [110, 140], calories: [1400, 1700] },
+    bulk: { protein: [100, 130], calories: [2000, 2300] },
+    toning: { protein: [100, 120], calories: [1700, 1900] },
+    fitness: { protein: [80, 100], calories: [1800, 2000] },
+  },
+  overweight: {
+    cut: { protein: [130, 160], calories: [1500, 1800] },
+    toning: { protein: [120, 150], calories: [1600, 1900] },
+    fitness: { protein: [100, 130], calories: [1700, 2000] },
+  },
+  obese: {
+    cut: { protein: [140, 180], calories: [1400, 1700] },
+    fitness: { protein: [120, 150], calories: [1500, 1800] },
+  },
+};
+
+// لو مجموعة (تصنيف الوزن + الهدف) مش موجودة بالجدول (مثلاً سمنة + شد الجسم)، بنرجع لأقرب هدف متوفر
+// إلها بنفس تصنيف الوزن، بالأولوية: لياقة -> شد الجسم -> تنحيف -> تضخيم
+function getTargetRange(weightStatus: string, goalCategory: string) {
+  const bucket = NUTRITION_TABLE[weightStatus] ?? NUTRITION_TABLE.normal;
+  if (bucket[goalCategory]) return bucket[goalCategory];
+  const fallbackOrder = ["fitness", "toning", "cut", "bulk"];
+  for (const g of fallbackOrder) {
+    if (bucket[g]) return bucket[g];
+  }
+  return { protein: [90, 120] as [number, number], calories: [1800, 2000] as [number, number] };
+}
+
 function calcNutritionTargets(fp: any): NutritionTargets | null {
   if (!fp?.weight || !fp?.height) return null;
 
   const weight = Number(fp.weight);
   const height = Number(fp.height);
-  const age = Number(fp.age) || 25;
-  const freq = Number(fp.frequency) || 3;
-  const goal = String(fp.goal || "").toLowerCase();
+  const goal = String(fp.goal || "");
 
-  const bmr = 10 * weight + 6.25 * height - 5 * age - 161;
+  const weightStatus = classifyWeightStatus(weight, height);
+  const goalCategory = classifyGoalCategory(goal);
+  const range = getTargetRange(weightStatus, goalCategory);
 
-  let activityMultiplier = 1.2;
-  if (freq >= 6) activityMultiplier = 1.725;
-  else if (freq >= 4) activityMultiplier = 1.55;
-  else if (freq >= 2) activityMultiplier = 1.375;
+  // بناخذ منتصف المجال المرجعي كهدف يومي فعلي (مقرّب لأقرب 5)
+  const proteinTarget = Math.round(((range.protein[0] + range.protein[1]) / 2) / 5) * 5;
+  const calorieTarget = Math.round(((range.calories[0] + range.calories[1]) / 2) / 10) * 10;
 
-  const tdee = bmr * activityMultiplier;
-
-  const isBulk = /gain|bulk|تضخيم|زياد/.test(goal);
-  const isLean = /lean|تنشيف|recomp/.test(goal);
-  const isLose = /lose|تنحيف|فقدان|خسار/.test(goal);
-
-  let calorieTarget = tdee;
-  let proteinPerKg = 1.8;
-  let goalLabel = "الحفاظ على الوزن";
-
-  if (isBulk) {
-    calorieTarget = tdee + 300;
-    proteinPerKg = 2.0;
-    goalLabel = "تضخيم";
-  } else if (isLean) {
-    calorieTarget = tdee - 300;
-    proteinPerKg = 2.4;
-    goalLabel = "تنشيف";
-  } else if (isLose) {
-    calorieTarget = tdee - 500;
-    proteinPerKg = 2.2;
-    goalLabel = "تنحيف";
-  }
-
-  // البروتين هو الأساس دايماً لأنه مرتبط ببناء العضلات والحفاظ عليها بغض النظر عن هدفك
-  // أما السعرات فهي تقديرية وبتختلف كثير حسب نشاطك الفعلي بالتمرين، فبنعرضها كخانة ثانوية إرشادية
   return {
-    calorieTarget: Math.max(1200, Math.round(calorieTarget)),
-    proteinTarget: Math.round(weight * proteinPerKg),
+    calorieTarget,
+    proteinTarget,
     showCalories: true,
-    goalLabel,
+    goalLabel: GOAL_LABELS[goalCategory],
   };
 }
 
@@ -206,11 +245,15 @@ function NutritionPage() {
   const [personal, setPersonal] = useState<any[]>([]);
   const [fp, setFp] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [newOpen, setNewOpen] = useState(false);
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [editingPersonalPlan, setEditingPersonalPlan] = useState<any>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
 
-  const [todayCalories, setTodayCalories] = useState(0);
-  const [todayProtein, setTodayProtein] = useState(0);
+  // سجلات اليوم الخام (meal_logs) — هاي هي "مصدر الحقيقة" الوحيد. أي إضافة أو حذف لصح
+  // بينعكس مباشرة على هالمصفوفة، والشريطين (سعرات/بروتين) وحالة الدوائر كلهم بينحسبوا منها
+  // مباشرة، مش من عدّاد منفصل. هيك بيستحيل يصير تعارض بين "شو محطوط عليه صح" و"شو ظاهر بالشريط"
+  const [todayLogs, setTodayLogs] = useState<any[]>([]);
   const [celebrationKey, setCelebrationKey] = useState(0);
   const proteinGoalReachedRef = useRef(false);
 
@@ -219,15 +262,16 @@ function NutritionPage() {
     const [{ data: sel }, { data: profileFp }, { data: logs }] = await Promise.all([
       supabase.from("active_plan_selection").select("*").eq("user_id", user.id).maybeSingle(),
       supabase.from("user_fitness_profile").select("*").eq("user_id", user.id).maybeSingle(),
-      supabase.from("meal_logs").select("*").eq("user_id", user.id).gte("created_at", startOfTodayISO()),
+      // مهم: جدول meal_logs عمود التاريخ فيه اسمه logged_at مش created_at
+      // (created_at غير موجود أصلاً بالجدول)، كان هاد سبب رئيسي إنه الفلترة
+      // ما كانت تشتغل صح ومجموع اليوم ما كان دقيق. وبما إنها gte(startOfTodayISO())
+      // فلما يبلّش يوم جديد هاد الاستعلام بيرجع مصفوفة فاضية تلقائياً، فالشريطين وكل الدوائر
+      // بترجع صفر/غير محطوط عليها صح لحالها بدون أي تصفير يدوي
+      mealLogsTable().select("*").eq("user_id", user.id).gte("logged_at", startOfTodayISO()),
     ]);
     setActive(sel);
     setFp(profileFp);
-
-    const calSum = (logs ?? []).reduce((s, l: any) => s + (Number(l.calories) || 0), 0);
-    const proSum = (logs ?? []).reduce((s, l: any) => s + (Number(l.protein) || 0), 0);
-    setTodayCalories(calSum);
-    setTodayProtein(proSum);
+    setTodayLogs(logs ?? []);
 
     if (sel?.nutrition_plan_type === "trainer" && sel?.nutrition_plan_id) {
       const { data } = await supabase.from("nutrition_plans").select("*").eq("id", sel.nutrition_plan_id).maybeSingle();
@@ -243,6 +287,18 @@ function NutritionPage() {
 
   const targets = calcNutritionTargets(fp);
 
+  // السعرات والبروتين المستهلكين اليوم = مجموع todayLogs فقط، محسوبين دايماً بشكل مباشر
+  // (مش عدّاد بيتزاد وينقص يدوياً). هيك لما تنشال كل الصح، todayLogs بترجع فاضية تلقائياً
+  // والشريطين بيصفّروا مباشرة بدون أي احتمال تعارض
+  const todayCalories = useMemo(
+    () => (todayLogs ?? []).reduce((s: number, l: any) => s + (Number(l.calories) || 0), 0),
+    [todayLogs]
+  );
+  const todayProtein = useMemo(
+    () => (todayLogs ?? []).reduce((s: number, l: any) => s + (Number(l.protein) || 0), 0),
+    [todayLogs]
+  );
+
   // نتابع لما البروتين يوصل للهدف عشان نطلق الاحتفال مرة وحدة بس لكل مرة توصل فيها الهدف
   useEffect(() => {
     if (!targets) return;
@@ -257,10 +313,41 @@ function NutritionPage() {
     }
   }, [todayProtein, targets?.proteinTarget]);
 
-  // بيتنادى من MealRow فور تسجيل وجبة، عشان الشريط يتحدث فوراً بدون انتظار إعادة التحميل
-  const onMealLogged = (calories: number, protein: number) => {
-    setTodayCalories((c) => c + (Number(calories) || 0));
-    setTodayProtein((p) => p + (Number(protein) || 0));
+  // بتتنادى من MealRow فور ما تنعمل صح على وجبة (بعد ما ينحفظ السجل فعلياً بقاعدة البيانات)
+  // بنضيف السجل الكامل (بالـ id تبعه) على todayLogs مباشرة
+  const addTodayLog = (logRow: any) => {
+    if (!logRow) return;
+    setTodayLogs((prev) => [...prev, logRow]);
+  };
+
+  // بتتنادى من MealRow فور ما ينشال صح عن وجبة (بعد ما ينحذف السجل فعلياً من قاعدة البيانات)
+  // بنشيل السجل من todayLogs بالاعتماد على الـ id تبعه بس، عشان ما نأثر على أي سجل ثاني
+  const removeTodayLog = (logId: string | null) => {
+    if (!logId) return;
+    setTodayLogs((prev) => prev.filter((l: any) => l.id !== logId));
+  };
+
+  // حذف خطة شخصية: بنحذفها من الجدول، ولو كانت هي الخطة النشطة بنشيل تفعيلها كمان
+  // عشان ما يضل فيه إشارة لخطة محذوفة بجدول active_plan_selection
+  const handleDeletePersonalPlan = async (p: any) => {
+    if (!confirm(`حذف خطة "${p.name}"؟`)) return;
+    try {
+      const { error } = await supabase.from("user_nutrition_plans").delete().eq("id", p.id);
+      if (error) throw error;
+      if (active?.nutrition_plan_type === "personal" && active?.nutrition_plan_id === p.id) {
+        await supabase.from("active_plan_selection").upsert({
+          user_id: user!.id,
+          nutrition_plan_type: null,
+          nutrition_plan_id: null,
+          workout_plan_type: active?.workout_plan_type,
+          workout_plan_id: active?.workout_plan_id,
+        });
+      }
+      toast.success("تم حذف الخطة");
+      load();
+    } catch (err: any) {
+      toast.error(err.message ?? "تعذّر حذف الخطة");
+    }
   };
 
   const currentType = active?.nutrition_plan_type;
@@ -326,18 +413,39 @@ function NutritionPage() {
       {loading && <Skeleton className="h-40 rounded-3xl" />}
 
       {!loading && currentType === "trainer" && trainerPlan && (
-        <MealsView plan={trainerPlan} userId={user!.id} sourceType="trainer" sourceId={trainerPlan.id} onLogged={onMealLogged} />
+        <MealsView
+          plan={trainerPlan}
+          userId={user!.id}
+          sourceType="trainer"
+          sourceId={trainerPlan.id}
+          onAddLog={addTodayLog}
+          onRemoveLog={removeTodayLog}
+          todayLogs={todayLogs}
+        />
       )}
       {!loading && currentType === "personal" && activePersonal && (
-        <MealsView plan={activePersonal} userId={user!.id} sourceType="personal" sourceId={activePersonal.id} onLogged={onMealLogged} />
+        <MealsView
+          plan={activePersonal}
+          userId={user!.id}
+          sourceType="personal"
+          sourceId={activePersonal.id}
+          onAddLog={addTodayLog}
+          onRemoveLog={removeTodayLog}
+          todayLogs={todayLogs}
+        />
       )}
 
       <div className="pt-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-2">
           <h2 className="font-bold">خططي الشخصية</h2>
-          <Button size="sm" onClick={() => setNewOpen(true)} className="rounded-xl gradient-primary">
-            <Plus className="w-4 h-4 ml-1" /> إنشاء
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" variant="outline" onClick={() => setMergeOpen(true)} className="rounded-xl">
+              دمج خطط
+            </Button>
+            <Button size="sm" onClick={() => { setEditingPersonalPlan(null); setPlanDialogOpen(true); }} className="rounded-xl gradient-primary">
+              <Plus className="w-4 h-4 ml-1" /> إنشاء
+            </Button>
+          </div>
         </div>
         {personal.length === 0 && (
           <Card className="p-6 text-center rounded-2xl border-dashed">
@@ -347,38 +455,68 @@ function NutritionPage() {
         )}
         <div className="grid gap-2">
           {personal.map((p) => (
-            <Card key={p.id} className="p-4 rounded-2xl flex items-center justify-between">
-              <div>
-                <div className="font-bold">{p.name}</div>
+            <Card key={p.id} className="p-4 rounded-2xl flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="font-bold truncate">{p.name}</div>
                 <div className="text-xs text-muted-foreground">{(p.meals ?? []).length} وجبات</div>
               </div>
-              <Button
-                size="sm"
-                variant={active?.nutrition_plan_id === p.id ? "default" : "outline"}
-                onClick={async () => {
-                  await supabase.from("active_plan_selection").upsert({
-                    user_id: user!.id,
-                    nutrition_plan_type: "personal",
-                    nutrition_plan_id: p.id,
-                    workout_plan_type: active?.workout_plan_type,
-                    workout_plan_id: active?.workout_plan_id,
-                  });
-                  toast.success("تم التفعيل");
-                  load();
-                }}
-                className="rounded-xl"
-              >
-                {active?.nutrition_plan_id === p.id ? "نشطة" : "تفعيل"}
-              </Button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => { setEditingPersonalPlan(p); setPlanDialogOpen(true); }}
+                  className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center"
+                  aria-label="تعديل الخطة"
+                >
+                  <Pencil className="w-4 h-4 text-primary" />
+                </button>
+                <button
+                  onClick={() => handleDeletePersonalPlan(p)}
+                  className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center"
+                  aria-label="حذف الخطة"
+                >
+                  <Trash2 className="w-4 h-4 text-destructive" />
+                </button>
+                <Button
+                  size="sm"
+                  variant={active?.nutrition_plan_id === p.id ? "default" : "outline"}
+                  onClick={async () => {
+                    await supabase.from("active_plan_selection").upsert({
+                      user_id: user!.id,
+                      nutrition_plan_type: "personal",
+                      nutrition_plan_id: p.id,
+                      workout_plan_type: active?.workout_plan_type,
+                      workout_plan_id: active?.workout_plan_id,
+                    });
+                    toast.success("تم التفعيل");
+                    load();
+                  }}
+                  className="rounded-xl"
+                >
+                  {active?.nutrition_plan_id === p.id ? "نشطة" : "تفعيل"}
+                </Button>
+              </div>
             </Card>
           ))}
         </div>
       </div>
 
       {/* قسم الوصفات الغذائية */}
-      <RecipesSection />
+      <RecipesSection userId={user?.id ?? ""} onAdopted={load} />
 
-      <NewNutritionDialog open={newOpen} onClose={() => setNewOpen(false)} userId={user?.id ?? ""} onSaved={load} />
+      <PersonalPlanDialog
+        open={planDialogOpen}
+        onClose={() => { setPlanDialogOpen(false); setEditingPersonalPlan(null); }}
+        userId={user?.id ?? ""}
+        plan={editingPersonalPlan}
+        onSaved={load}
+      />
+      <MergePlansDialog
+        open={mergeOpen}
+        onClose={() => setMergeOpen(false)}
+        personalPlans={personal}
+        userId={user?.id ?? ""}
+        activeSelection={active}
+        onMerged={load}
+      />
       <BrowseTrainerNutritionDialog
         open={browseOpen}
         onClose={() => setBrowseOpen(false)}
@@ -395,45 +533,112 @@ function NutritionPage() {
 
 // ================== عرض خطة الوجبات المعتمدة ==================
 
-function MealsView({ plan, userId, sourceType, sourceId, onLogged }: any) {
+function MealsView({ plan, userId, sourceType, sourceId, onAddLog, onRemoveLog, todayLogs }: any) {
+  // بنحسب، لكل موقع (index) بالخطة، آخر سجل اليوم إله (لو موجود) لنفس المصدر (trainer/personal + id)
+  // مهم: بنعتمد على meal_index (موقع الوجبة بمصفوفة meals) مش على اسم الوجبة، عشان لو في وجبتين
+  // بنفس الاسم أو بنفس النوع (متل وجبتين "فطور") ما يصير خلط بينهم — كل وجبة بتتتبّع لحالها بالضبط
+  const logsByIndex = new Map<number, any>();
+  (todayLogs ?? [])
+    .filter((l: any) => l.source_type === sourceType && l.source_id === sourceId && l.meal_index !== null && l.meal_index !== undefined)
+    .forEach((l: any) => {
+      const existing = logsByIndex.get(l.meal_index);
+      if (!existing || new Date(l.logged_at) > new Date(existing.logged_at)) {
+        logsByIndex.set(l.meal_index, l);
+      }
+    });
+
   return (
     <div className="space-y-3">
       <Card className="p-5 rounded-3xl gradient-blush border-none">
         <h2 className="text-xl font-extrabold">{plan.name}</h2>
         {plan.description && <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>}
       </Card>
-      {(plan.meals ?? []).map((m: any, i: number) => (
-        <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-          <MealRow meal={m} userId={userId} sourceType={sourceType} sourceId={sourceId} onLogged={onLogged} />
-        </motion.div>
-      ))}
+      {(plan.meals ?? []).map((m: any, i: number) => {
+        const existingLog = logsByIndex.get(i);
+        return (
+          <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+            <MealRow
+              meal={m}
+              userId={userId}
+              sourceType={sourceType}
+              sourceId={sourceId}
+              mealIndex={i}
+              onAddLog={onAddLog}
+              onRemoveLog={onRemoveLog}
+              initialDone={!!existingLog}
+              initialLogId={existingLog?.id ?? null}
+            />
+          </motion.div>
+        );
+      })}
     </div>
   );
 }
 
-function MealRow({ meal, userId, sourceType, sourceId, onLogged }: any) {
-  const [done, setDone] = useState(false);
+function MealRow({ meal, userId, sourceType, sourceId, mealIndex, onAddLog, onRemoveLog, initialDone, initialLogId }: any) {
+  // بتبلّش من initialDone (جاية من meal_logs الفعلية بقاعدة البيانات) بدل ما تبلّش false دايماً
+  // هيك لما تسكري الموقع وترجعي، أو تتنقلي بين الصفحات، الوجبة الي عملتيلها CHECK اليوم بتضل معمول عليها CHECK
+  // وبمجرد ما يبلّش يوم جديد، startOfTodayISO() بترجع تاريخ اليوم الجديد فالفلترة بجيب سجلات اليوم الجديد بس
+  // فتلقائياً الوجبات بترجع غير معمول عليها CHECK بدون أي حاجة لتصفير يدوي
+  const [done, setDone] = useState(!!initialDone);
+  // بنحتفظ برقم سجل meal_logs المرتبط بهاي الوجبة عشان نقدر نحذفه بالضبط لو المستخدمة ضغطت تاني تشيل الـ CHECK
+  const [logId, setLogId] = useState<string | null>(initialLogId ?? null);
+  const [busy, setBusy] = useState(false);
+
+  const handleToggle = async () => {
+    if (busy) return;
+    setBusy(true);
+    const protein = Number(meal.protein) || 0;
+    const calories = Number(meal.calories) || 0;
+
+    try {
+      if (!done) {
+        // مش معمول عليها CHECK حالياً -> نسجّلها، وبنضيف السجل الكامل الراجع من قاعدة البيانات
+        // على todayLogs بالصفحة الرئيسية (مصدر الحقيقة)، فالشريطين بيتحدثوا تلقائياً منه
+        // meal_index هو الي بيربط هالسجل بالضبط بهاي الوجبة بالذات (مش بس بالاسم)
+        const { data, error } = await mealLogsTable()
+          .insert({
+            user_id: userId,
+            source_type: sourceType,
+            source_id: sourceId,
+            meal_name: meal.name,
+            meal_index: mealIndex,
+            calories,
+            protein,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        setDone(true);
+        setLogId(data?.id ?? null);
+        onAddLog?.(data);
+        toast.success("تم تسجيل الوجبة");
+      } else {
+        // معمول عليها CHECK حالياً -> نحذف السجل من meal_logs، وبنشيله كمان من todayLogs
+        // بالصفحة الرئيسية بنفس اللحظة، فالشريطين بينقصوا فوراً وبدقة
+        if (logId) {
+          const { error } = await mealLogsTable().delete().eq("id", logId);
+          if (error) throw error;
+          onRemoveLog?.(logId);
+        }
+        setDone(false);
+        setLogId(null);
+        toast.success("تم إلغاء تسجيل الوجبة");
+      }
+    } catch (err: any) {
+      toast.error(err.message ?? "صار في خطأ، حاولي مرة ثانية");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Card className="p-4 rounded-2xl flex items-center justify-between">
       <div className="flex items-center gap-3">
         <button
-          disabled={done}
-          onClick={async () => {
-            const protein = Number(meal.protein) || 0;
-            const calories = Number(meal.calories) || 0;
-            await mealLogsTable().insert({
-              user_id: userId,
-              source_type: sourceType,
-              source_id: sourceId,
-              meal_name: meal.name,
-              calories,
-              protein,
-            });
-            setDone(true);
-            onLogged?.(calories, protein);
-            toast.success("تم تسجيل الوجبة");
-          }}
-          className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition ${done ? "gradient-primary border-primary" : "border-border"}`}
+          disabled={busy}
+          onClick={handleToggle}
+          className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition ${done ? "gradient-primary border-primary" : "border-border"} ${busy ? "opacity-60" : ""}`}
         >
           {done && <CheckCircle2 className="w-5 h-5 text-primary-foreground" />}
         </button>
@@ -450,13 +655,67 @@ function MealRow({ meal, userId, sourceType, sourceId, onLogged }: any) {
   );
 }
 
-function NewNutritionDialog({ open, onClose, userId, onSaved }: any) {
+function PersonalPlanDialog({ open, onClose, userId, plan, onSaved }: any) {
   const [name, setName] = useState("");
   const [meals, setMeals] = useState<any[]>([{ meal: "فطور", name: "", calories: 0, protein: 0 }]);
+  const [saving, setSaving] = useState(false);
+
+  // كل ما ينفتح الديالوج: لو في plan (يعني وضع تعديل) نعبّي الحقول من بياناته
+  // ولو مافي (وضع إنشاء) نرجع للقيم الافتراضية الفاضية
+  useEffect(() => {
+    if (!open) return;
+    if (plan) {
+      setName(plan.name ?? "");
+      setMeals(
+        plan.meals && plan.meals.length > 0
+          ? plan.meals.map((m: any) => ({
+              meal: m.meal ?? "",
+              name: m.name ?? "",
+              calories: m.calories ?? 0,
+              protein: m.protein ?? 0,
+            }))
+          : [{ meal: "فطور", name: "", calories: 0, protein: 0 }]
+      );
+    } else {
+      setName("");
+      setMeals([{ meal: "فطور", name: "", calories: 0, protein: 0 }]);
+    }
+  }, [open, plan]);
+
+  const handleSave = async () => {
+    if (!name) return toast.error("اكتبي اسم الخطة");
+    setSaving(true);
+    try {
+      const cleanMeals = meals.filter((m) => m.name);
+      if (plan?.id) {
+        const { data, error } = await supabase
+          .from("user_nutrition_plans")
+          .update({ name, meals: cleanMeals })
+          .eq("id", plan.id)
+          .select();
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          throw new Error("ما انعدّلت الخطة — تأكدي من صلاحيات الوصول");
+        }
+        toast.success("تم تحديث الخطة");
+      } else {
+        const { error } = await supabase.from("user_nutrition_plans").insert({ user_id: userId, name, meals: cleanMeals });
+        if (error) throw error;
+        toast.success("تم الحفظ");
+      }
+      onClose();
+      onSaved();
+    } catch (err: any) {
+      toast.error(err.message ?? "صار في خطأ، حاولي مرة ثانية");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="rounded-3xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>خطة تغذية شخصية</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{plan ? "تعديل خطة تغذية شخصية" : "خطة تغذية شخصية"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div>
             <Label>اسم الخطة</Label>
@@ -498,13 +757,137 @@ function NewNutritionDialog({ open, onClose, userId, onSaved }: any) {
               <Plus className="w-4 h-4 ml-1" /> إضافة وجبة
             </Button>
           </div>
-          <Button onClick={async () => {
-            if (!name) return toast.error("اكتبي اسم الخطة");
-            await supabase.from("user_nutrition_plans").insert({ user_id: userId, name, meals: meals.filter(m => m.name) });
-            toast.success("تم الحفظ"); onClose(); onSaved();
-            setName(""); setMeals([{ meal: "فطور", name: "", calories: 0, protein: 0 }]);
-          }} className="w-full rounded-2xl gradient-primary">حفظ</Button>
+          <Button disabled={saving} onClick={handleSave} className="w-full rounded-2xl gradient-primary">
+            {saving ? "جاري الحفظ..." : plan ? "تحديث الخطة" : "حفظ"}
+          </Button>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// نصنّف نوع الوجبة (المكتوب حر من المستخدمة بحقل "نوع") لواحدة من أربع فئات معروفة،
+// عشان نقدر نرتب الوجبات صح لما ندمج أكتر من خطة ببعض
+function classifyMealType(raw: string): "breakfast" | "lunch" | "snack" | "dinner" | "other" {
+  const t = String(raw || "").toLowerCase();
+  if (/فطور|breakfast/.test(t)) return "breakfast";
+  if (/غداء|غدا|lunch/.test(t)) return "lunch";
+  if (/عشاء|dinner/.test(t)) return "dinner";
+  if (/سناك|snack|وجبة خفيفة/.test(t)) return "snack";
+  return "other";
+}
+
+// ترتيب الفئات بالخطة المدموجة: فطور، غداء، سناكات (وأي نوع تاني غير معروف)، وبعدهم العشاء آخر إشي
+const MEAL_TYPE_ORDER: Record<string, number> = {
+  breakfast: 0,
+  lunch: 1,
+  snack: 2,
+  other: 3,
+  dinner: 4,
+};
+
+function MergePlansDialog({ open, onClose, personalPlans, userId, activeSelection, onMerged }: any) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [merging, setMerging] = useState(false);
+
+  useEffect(() => {
+    if (!open) setSelectedIds([]);
+  }, [open]);
+
+  const toggle = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleMerge = async () => {
+    if (selectedIds.length < 2) return toast.error("اختاري خطتين على الأقل عشان تدمجيهم");
+    setMerging(true);
+    try {
+      const chosen = (personalPlans ?? []).filter((p: any) => selectedIds.includes(p.id));
+      // بنجمع كل وجبات الخطط المختارة، وبنرتبهم: فطور، غداء، سناكات، (أي نوع تاني)، عشاء
+      // مع الحفاظ على ترتيبهم الأصلي جوا نفس الفئة (stable sort)
+      const allMeals = chosen.flatMap((p: any) => p.meals ?? []);
+      const sortedMeals = allMeals
+        .map((m: any, idx: number) => ({ m, idx }))
+        .sort((a: any, b: any) => {
+          const oa = MEAL_TYPE_ORDER[classifyMealType(a.m.meal)];
+          const ob = MEAL_TYPE_ORDER[classifyMealType(b.m.meal)];
+          if (oa !== ob) return oa - ob;
+          return a.idx - b.idx;
+        })
+        .map((x: any) => x.m);
+
+      const { error: insertError } = await supabase.from("user_nutrition_plans").insert({
+        user_id: userId,
+        name: "خطة شاملة لليوم",
+        meals: sortedMeals,
+      });
+      if (insertError) throw insertError;
+
+      // بعد ما تنعمل الخطة الشاملة، بنحذف الخطط الأصلية الي انضمّت فيها (بتصير موجودة بس جوا
+      // الخطة الشاملة، مش موجودة لحالها كمان بالقائمة) — الخطط الي ما اخترناها بتضل موجودة زي ما هي
+      const { error: deleteError } = await supabase.from("user_nutrition_plans").delete().in("id", selectedIds);
+      if (deleteError) throw deleteError;
+
+      // لو وحدة من الخطط المدموجة كانت هي الخطة النشطة، بنشيل تفعيلها عشان ما يضل فيه إشارة لخطة محذوفة
+      if (
+        activeSelection?.nutrition_plan_type === "personal" &&
+        selectedIds.includes(activeSelection?.nutrition_plan_id)
+      ) {
+        await supabase.from("active_plan_selection").upsert({
+          user_id: userId,
+          nutrition_plan_type: null,
+          nutrition_plan_id: null,
+          workout_plan_type: activeSelection?.workout_plan_type,
+          workout_plan_id: activeSelection?.workout_plan_id,
+        });
+      }
+
+      toast.success("تم إنشاء الخطة الشاملة");
+      onClose();
+      onMerged();
+    } catch (err: any) {
+      toast.error(err.message ?? "تعذّر دمج الخطط");
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="rounded-3xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>دمج خطط شخصية</DialogTitle></DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          اختاري خطتين أو أكتر، وبتنعمل خطة جديدة اسمها "خطة شاملة لليوم" فيها كل وجباتهم، مرتبة: فطور، غداء، سناكات، عشاء. الخطط الأصلية بتضل موجودة زي ما هي.
+        </p>
+        <div className="space-y-2 mt-2">
+          {(personalPlans ?? []).length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">ما في خطط شخصية عشان تدمجيها</p>
+          )}
+          {(personalPlans ?? []).map((p: any) => (
+            <label
+              key={p.id}
+              className="flex items-center gap-3 rounded-xl border border-border p-3 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(p.id)}
+                onChange={() => toggle(p.id)}
+                className="w-4 h-4"
+              />
+              <div className="min-w-0">
+                <div className="font-bold text-sm truncate">{p.name}</div>
+                <div className="text-[11px] text-muted-foreground">{(p.meals ?? []).length} وجبات</div>
+              </div>
+            </label>
+          ))}
+        </div>
+        <Button
+          disabled={merging || selectedIds.length < 2}
+          onClick={handleMerge}
+          className="w-full rounded-2xl gradient-primary mt-3"
+        >
+          {merging ? "جاري الدمج..." : "دمج الخطط المختارة"}
+        </Button>
       </DialogContent>
     </Dialog>
   );
@@ -656,14 +1039,17 @@ function RecipeCard({
   editorMode,
   onEdit,
   onDelete,
+  onAdopt,
 }: {
   recipe: Recipe;
   editorMode: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onAdopt: () => Promise<void> | void;
 }) {
   const [videoOpen, setVideoOpen] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
+  const [adopting, setAdopting] = useState(false);
   const youtubeId = getYouTubeId(recipe.video_url);
   const thumbnail = recipe.image_url || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg` : null);
 
@@ -672,6 +1058,16 @@ function RecipeCard({
       ? recipe.description.slice(0, 70).trim() + "..."
       : recipe.description
     : "";
+
+  const handleAdopt = async () => {
+    if (adopting) return;
+    setAdopting(true);
+    try {
+      await onAdopt();
+    } finally {
+      setAdopting(false);
+    }
+  };
 
   return (
     <>
@@ -743,6 +1139,15 @@ function RecipeCard({
               عرض المزيد <ChevronLeft className="w-3 h-3" />
             </button>
           )}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={adopting}
+            onClick={handleAdopt}
+            className="rounded-xl w-full h-8 text-[11px] mt-auto"
+          >
+            {adopting ? "جاري الاعتماد..." : "اعتماد"}
+          </Button>
         </div>
       </Card>
 
@@ -797,11 +1202,14 @@ function RecipeEditDialog({
         image_url: imageUrl.trim() || null,
       };
       if (recipe?.id) {
-        const { error } = await recipesTable().update(payload).eq("id", recipe.id);
+        const { data, error } = await recipesTable().update(payload).eq("id", recipe.id).select();
         if (error) throw error;
+        if (!data || data.length === 0) {
+          throw new Error("ما انعدّل أي صف — تأكدي من صلاحيات RLS على جدول recipes");
+        }
         toast.success("تم تحديث الوصفة");
       } else {
-        const { error } = await recipesTable().insert(payload);
+        const { data, error } = await recipesTable().insert(payload).select();
         if (error) throw error;
         toast.success("تم إضافة الوصفة");
       }
@@ -858,7 +1266,7 @@ function RecipeEditDialog({
   );
 }
 
-function RecipesSection() {
+function RecipesSection({ userId, onAdopted }: any) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);
   const [editorMode, setEditorMode] = useState(false);
@@ -885,6 +1293,30 @@ function RecipesSection() {
     if (error) return toast.error(error.message);
     toast.success("تم حذف الوصفة");
     load();
+  };
+
+  // اعتماد وصفة: بننشئلها خطة تغذية شخصية جديدة (وجبة وحدة إلها اسم/سعرات/بروتين الوصفة، بدون الفيديو)
+  // بالضبط متل ما لو المستخدمة ضافتها يدوياً من زر "إنشاء" — والوصفة نفسها بتضل موجودة بقسم الوصفات زي ما هي
+  const handleAdopt = async (recipe: Recipe) => {
+    if (!userId) return toast.error("لازم تسجّلي الدخول عشان تعتمدي وصفة");
+    try {
+      const meal = {
+        meal: recipe.category || "وجبة",
+        name: recipe.name,
+        calories: recipe.calories || 0,
+        protein: recipe.protein || 0,
+      };
+      const { error } = await supabase.from("user_nutrition_plans").insert({
+        user_id: userId,
+        name: recipe.name,
+        meals: [meal],
+      });
+      if (error) throw error;
+      toast.success("تم اعتماد الوصفة كخطة تغذية شخصية");
+      onAdopted?.();
+    } catch (err: any) {
+      toast.error(err.message ?? "تعذّر اعتماد الوصفة");
+    }
   };
 
   return (
@@ -931,6 +1363,7 @@ function RecipesSection() {
               editorMode={editorMode}
               onEdit={() => { setEditingRecipe(r); setEditDialogOpen(true); }}
               onDelete={() => handleDelete(r)}
+              onAdopt={() => { void handleAdopt(r); }}
             />
           ))}
         </div>

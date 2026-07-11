@@ -533,21 +533,6 @@ function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any;
         </div>
       </div>
 
-      {fixedWeek && (
-        <div className="grid grid-cols-7 gap-1 text-center">
-          {days.map((d: any, i: number) => (
-            <div
-              key={i}
-              className={`p-2 rounded-xl text-[10px] ${d.is_rest ? "bg-muted text-muted-foreground" : "gradient-primary text-primary-foreground"}`}
-            >
-              <div className="font-bold">{DAYS_SHORT[d.day_of_week]}</div>
-              <div className="mt-1 truncate">
-                {d.is_rest ? "راحة" : d.muscle_group || `${(d.items ?? []).length} تمارين`}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="space-y-2">
         {days.map((d: any, i: number) => {
