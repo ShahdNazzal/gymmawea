@@ -183,24 +183,26 @@ function TrainerProfile() {
         </>
       )}
 
+      {/* تمارين — تخطيط عمودي (كل عنصر فوق التاني) عشان يبين كامل بعرض الشاشة بدون ما يتزاحم يمين/شمال */}
       {tab === "workouts" && (
-        <div className="grid gap-2">
+        <div className="grid gap-3">
           {workouts.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">لا توجد خطط تمارين</p>}
           {workouts.map((w) => (
             <Card key={w.id} className="p-4 rounded-2xl">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col items-center text-center gap-2">
                 {w.image_url ? (
-                  <img src={w.image_url} className="w-14 h-14 rounded-xl object-cover shrink-0" />
+                  <img src={w.image_url} className="w-16 h-16 rounded-xl object-cover" />
                 ) : (
-                  <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center shrink-0"><Dumbbell className="w-5 h-5" /></div>
+                  <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center"><Dumbbell className="w-6 h-6" /></div>
                 )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold truncate">{w.name}</div>
-                  <div className="text-xs text-muted-foreground">{(Array.isArray(w.exercises) ? w.exercises : []).length} يوم • {w.min_frequency}+/أسبوع</div>
+                <div className="w-full">
+                  <div className="font-bold break-words">{w.name}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {(Array.isArray(w.exercises) ? w.exercises : []).length} يوم • {w.min_frequency}+/أسبوع
+                  </div>
                 </div>
               </div>
-              {w.description && <p className="text-xs text-muted-foreground mt-2">{w.description}</p>}
-              {/* زر الاعتماد صار full-width تحت المحتوى — مريح أكتر عالموبايل من زر ضيق جنب النص */}
+              {w.description && <p className="text-xs text-muted-foreground mt-3 text-center leading-relaxed">{w.description}</p>}
               {user?.id !== id && (
                 <Button size="sm" onClick={() => adoptWorkout(w.id)} className="rounded-xl gradient-primary w-full mt-3">اعتماد</Button>
               )}
@@ -209,16 +211,19 @@ function TrainerProfile() {
         </div>
       )}
 
+      {/* تغذية — نفس مبدأ التخطيط العمودي */}
       {tab === "nutrition" && (
-        <div className="grid gap-2">
+        <div className="grid gap-3">
           {nutrition.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">لا توجد خطط تغذية</p>}
           {nutrition.map((n) => (
             <Card key={n.id} className="p-4 rounded-2xl">
-              <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center shrink-0"><Apple className="w-5 h-5" /></div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold truncate">{n.name}</div>
-                  <div className="text-xs text-muted-foreground">{n.min_calories}–{n.max_calories} سعرة • {(Array.isArray(n.meals) ? n.meals : []).length} وجبات</div>
+              <div className="flex flex-col items-center text-center gap-2">
+                <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center"><Apple className="w-6 h-6" /></div>
+                <div className="w-full">
+                  <div className="font-bold break-words">{n.name}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {n.min_calories}–{n.max_calories} سعرة • {(Array.isArray(n.meals) ? n.meals : []).length} وجبات
+                  </div>
                 </div>
               </div>
               {user?.id !== id && (
