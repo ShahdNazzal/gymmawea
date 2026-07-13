@@ -1,4 +1,3 @@
-//C:\Users\lenovo\Downloads\jammawia-main (1)\jammawia-main\src\routes\_authenticated\_app.profile.tsx
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -265,6 +264,37 @@ function ProfilePage() {
               ))}
             </div>
           </>
+        )}
+      </Card>
+
+      {/* منشوراتي — خاصية نشر المنشورات */}
+      <Card className="p-5 rounded-3xl">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-bold text-sm">منشوراتي</div>
+          <Button size="sm" onClick={() => setNewPostOpen(true)} className="rounded-xl gradient-primary">
+            <ImagePlus className="w-4 h-4 ml-1" /> منشور
+          </Button>
+        </div>
+        {posts.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-6">لا توجد منشورات بعد</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-1">
+            {posts.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => (p.image_url ? setOpenPost(p) : undefined)}
+                className="aspect-square rounded-xl bg-muted overflow-hidden relative text-right"
+              >
+                {p.image_url ? (
+                  <img src={p.image_url} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="p-2 text-[11px] leading-tight h-full overflow-hidden flex items-center justify-center text-center">
+                    {p.content?.slice(0, 60)}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
         )}
       </Card>
 
