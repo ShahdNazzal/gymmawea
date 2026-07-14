@@ -12,6 +12,9 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 
+// ضيفي هاي الأيقونات الثلاثة على الاستيراد الموجود من lucide-react، بدل ما تعملي استيراد منفصل:
+// import { Plus, Settings as SettingsIcon, TrendingUp, Camera, ImagePlus, Calendar, ImageOff, X, Dumbbell, Moon, Flame } from "lucide-react";
+
 // نستخدم هاد المتغير بكل استعلامات الجداول الجديدة (post_likes / post_comments)
 // لأنه ملف الأنواع التلقائي تبع Supabase لسا ما تحدث فيهم
 const db = supabase as any;

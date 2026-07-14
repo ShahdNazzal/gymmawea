@@ -15,6 +15,10 @@ import { GOAL_LABELS } from "@/lib/workout-rules";
 import { uploadFile } from "@/lib/upload";
 import { motion, AnimatePresence } from "framer-motion";
 
+import { Dumbbell, Moon, Flame } from "lucide-react";
+// ضيفي هاي الأيقونات الثلاثة على الاستيراد الموجود من lucide-react، بدل ما تعملي استيراد منفصل:
+// import { Plus, Settings as SettingsIcon, TrendingUp, Camera, ImagePlus, Calendar, ImageOff, X, Dumbbell, Moon, Flame } from "lucide-react";
+
 export const Route = createFileRoute("/_authenticated/_app/profile")({
   head: () => ({ meta: [{ title: "ملفي — جمّاوية" }] }),
   component: ProfilePage,
@@ -231,14 +235,9 @@ function ProfilePage() {
       )}
 
       {/* الجدول الأسبوعي - المصدر الوحيد هلأ هو الخطة المعتمدة حالياً */}
-      <Card className="p-5 rounded-3xl">
-        <div className="flex items-center justify-between mb-5">
-          <div className="font-bold text-sm flex items-center gap-2">
-            <Calendar className="w-4 h-4" /> جدولي الأسبوعي
-          </div>
-          <Link to="/workouts" className="text-xs text-primary font-semibold">
-            تعديل
-          </Link>
+      <Card className="p-5 rounded-3xl overflow-hidden">
+        <div className="font-bold text-sm flex items-center gap-2 mb-5">
+          <Calendar className="w-4 h-4" /> جدولي الأسبوعي
         </div>
 
         {!activePlan ? (
@@ -246,24 +245,13 @@ function ProfilePage() {
             ما في خطة معتمدة حالياً — اعتمدي خطة من صفحة التمارين ليظهر جدولك هون تلقائياً
           </p>
         ) : (
-          <>
-            {/* عرض اللابتوب/الشاشات الكبيرة: صف واحد أفقي كامل، بنفس التصميم الأصلي */}
-            <div className="hidden sm:block relative">
-              <div className="absolute top-7 left-0 right-0 h-[2px] bg-border z-0" />
-              <div className="flex justify-between items-end gap-2 relative z-10">
-                {weekSlots.map((slot, i) => (
-                  <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
-                ))}
-              </div>
-            </div>
-
-            {/* عرض الموبايل: صفين (4 + 3) لأنه الشاشة عمودية الشكل */}
-            <div className="sm:hidden grid grid-cols-4 gap-3 items-end">
+          <div className="-mx-5 px-5 sm:mx-0 sm:px-0 overflow-x-auto sm:overflow-visible scrollbar-none">
+            <div className="flex gap-2.5 sm:gap-3 min-w-max sm:min-w-0 sm:justify-between">
               {weekSlots.map((slot, i) => (
                 <WeekDayCell key={i} slot={slot} isToday={new Date().getDay() === i} />
               ))}
             </div>
-          </>
+          </div>
         )}
       </Card>
 
@@ -343,22 +331,32 @@ function ProfilePage() {
 
 function WeekDayCell({ slot, isToday }: { slot: WeekSlot; isToday: boolean }) {
   return (
-    <div className="flex flex-col items-center flex-1">
+    <div className="flex flex-col items-center w-16 sm:w-auto sm:flex-1 sm:max-w-[6.5rem] shrink-0">
       <div
-        className={`flex items-center justify-center rounded-full font-bold text-center leading-tight px-1 transition-all
-        ${isToday ? "w-[4.5rem] h-[4.5rem] text-[12px] ring-2 ring-primary shadow-lg shadow-primary/20" : "w-14 h-14 text-[10px]"}
-        ${slot.isRest ? "bg-muted text-muted-foreground" : "gradient-primary text-white"}
-      `}
+        className={`relative w-full h-24 sm:h-28 rounded-2xl flex flex-col items-center justify-center gap-1.5 px-1
+        backdrop-blur-xl border transition-all
+        ${isToday ? "shadow-lg shadow-primary/20" : ""}
+        ${slot.isRest
+          ? "bg-white/30 border-white/40 text-muted-foreground"
+          : "bg-primary/15 border-primary/25"
+        }
+        ${isToday ? "border-primary/60 bg-white/50" : ""}
+        `}
       >
-        {slot.label}
-      </div>
+        <span className={`text-[11px] font-extrabold ${slot.isRest ? "text-muted-foreground" : "text-primary"}`}>
+          {slot.label}
+        </span>
 
-      <div
-        className={`mt-3 w-full text-center px-2 py-2 rounded-xl leading-tight
-        ${isToday ? "text-[12px] font-bold" : "text-[11px]"}
-        ${slot.isRest ? "text-muted-foreground" : "bg-primary/10 text-primary font-semibold"}`}
-      >
-        {slot.isRest ? "راحة" : (slot.subtitle ?? "تمرين")}
+        {slot.isRest ? (
+          <span className="text-[9px] text-muted-foreground/70 font-medium">راحة</span>
+        ) : (
+          <>
+            <span className="text-lg leading-none">🏋️</span>
+            <span className="text-[8.5px] sm:text-[10px] text-primary font-bold text-center leading-tight line-clamp-2">
+              {slot.subtitle ?? "تمرين"}
+            </span>
+          </>
+        )}
       </div>
     </div>
   );
