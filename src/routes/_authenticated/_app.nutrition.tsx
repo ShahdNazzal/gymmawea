@@ -556,7 +556,11 @@ function MealsView({ plan, userId, sourceType, sourceId, onAddLog, onRemoveLog, 
       {(plan.meals ?? []).map((m: any, i: number) => {
         const existingLog = logsByIndex.get(i);
         return (
-          <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+          // مهم: الـ key لازم يتضمّن sourceType/sourceId مش بس i، عشان لما تتبدّل الخطة النشطة
+          // (مثلاً من خطة شخصية أ لخطة شخصية ب) React يعمل remount كامل لهاد الصف بدل ما يعيد
+          // استخدام نفس مكوّن MealRow القديم (اللي كان لسا محتفظ بحالة "done"/"logId" تبع الخطة أ).
+          // هيك كل خطة بتاخذ حالة الـ check الصحيحة تبعها هي بس، وما في أي تسرب بين الخطط
+          <motion.div key={`${sourceType}-${sourceId}-${i}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
             <MealRow
               meal={m}
               userId={userId}
