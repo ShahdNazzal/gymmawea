@@ -177,7 +177,7 @@ function OnboardingPage() {
           >
             {step === "role" && (
               <div>
-                <h2 className="text-2xl font-bold mb-2">أهلاً بكِ في جمّاوية</h2>
+                <h2 className="text-2xl font-bold mb-2">أهلاً بكِ في EVOLVA</h2>
                 <p className="text-muted-foreground mb-6 text-sm">اختاري نوع حسابك</p>
                 <div className="grid gap-3">
                   <RoleCard

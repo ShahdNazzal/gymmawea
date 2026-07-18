@@ -36,7 +36,7 @@ function getYouTubeId(url?: string | null): string | null {
 }
 
 export const Route = createFileRoute("/_authenticated/_app/u/$id")({
-  head: () => ({ meta: [{ title: "الملف الشخصي — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "الملف الشخصي — EVOLVA" }] }),
   component: PublicUserProfile,
 });
 

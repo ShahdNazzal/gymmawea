@@ -20,7 +20,7 @@ import { Dumbbell, Moon, Flame } from "lucide-react";
 // import { Plus, Settings as SettingsIcon, TrendingUp, Camera, ImagePlus, Calendar, ImageOff, X, Dumbbell, Moon, Flame } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/_app/profile")({
-  head: () => ({ meta: [{ title: "ملفي — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "ملفي — EVOLVA" }] }),
   component: ProfilePage,
 });
 

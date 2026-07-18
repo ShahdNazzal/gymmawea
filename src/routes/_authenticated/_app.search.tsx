@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Search as SearchIcon } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/_app/search")({
-  head: () => ({ meta: [{ title: "بحث — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "بحث — EVOLVA" }] }),
   component: SearchPage,
 });
 

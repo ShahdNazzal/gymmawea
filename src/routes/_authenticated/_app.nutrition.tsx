@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_authenticated/_app/nutrition")({
-  head: () => ({ meta: [{ title: "التغذية — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "التغذية — EVOLVA" }] }),
   component: NutritionPage,
 });
 

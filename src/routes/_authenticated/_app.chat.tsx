@@ -14,11 +14,11 @@ import { toast } from "sonner";
 const db = supabase as any;
 
 export const Route = createFileRoute("/_authenticated/_app/chat")({
-  head: () => ({ meta: [{ title: "الشات — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "الشات — EVOLVA" }] }),
   // بندعم رابط مباشر لمحادثة معينة: /chat?with=USER_ID
   // هيك لما نكبس "رسالة" من بروفايل حدا، منروح عالشات معه مباشرة
   // بدل ما نطلع على قائمة كل المحادثات.
-  // ملاحظة مهمة: لازم نرجّع "with" كمفتاح اختياري (with?) مش كقيمة ممكن تكون undefined،
+  // ملاحظة مهمة: لازم نرجّع "with" كمفتاح اختياري (with?) مش كقيمة ممكن تكون undefined，
   // وإلا TypeScript بيصير يطلب تمرير search بكل مكان فيه Link/navigate لـ /chat حتى لو مش لازم.
   validateSearch: (search: Record<string, unknown>): { with?: string } => {
     const withId = typeof search.with === "string" ? search.with : undefined;

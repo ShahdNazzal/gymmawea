@@ -11,8 +11,8 @@ import { Sparkles, Heart, Dumbbell } from "lucide-react";
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "تسجيل الدخول — جمّاوية" },
-      { name: "description", content: "سجّلي دخولك أو أنشئي حساب على منصة جمّاوية للياقة النسائية." },
+      { title: "تسجيل الدخول — EVOLVA" },
+      { name: "description", content: "سجّلي دخولك أو أنشئي حساب على منصة EVOLVA للياقة النسائية." },
     ],
   }),
   component: AuthPage,
@@ -71,13 +71,15 @@ function AuthPage() {
 >
   <img
     src="/favicon3.png"
-    alt="جمّاوية"
+    alt="EVOLVA"
     className="w-28 h-28 object-contain"
   />
 </motion.div>
-          <h1 className="text-4xl font-extrabold tracking-tight">جمّاوية</h1>
+          <h1 className="text-4xl font-extrabold tracking-tight text-pink-800">
+  EVOLVA
+</h1>
           <p className="text-muted-foreground mt-2 text-sm">
-            رحلتك للياقة تبدأ من هنا
+         رحلتُكِ نحو نسخة أقوى من نفسكِ تبدأ من هنا.
           </p>
         </div>
 

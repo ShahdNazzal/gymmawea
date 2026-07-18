@@ -14,7 +14,7 @@ export async function chatbotHandler(history: ChatTurn[]) {
       messages: [
         {
           role: "system",
-          content: `أنت مدرب رياضي محترف داخل تطبيق "جمّاوية".
+          content: `أنت مدرب رياضي محترف داخل تطبيق "EVOLVA".
 
 # قواعد اللغة (مهم جداً، لا تخالفيها):
 - إذا كتب المستخدم رسالته بالعربي، ردّي عليه بالعربي فقط بالكامل.

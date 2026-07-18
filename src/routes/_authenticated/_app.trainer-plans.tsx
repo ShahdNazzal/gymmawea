@@ -14,9 +14,19 @@ import { GOAL_LABELS, ACTIVITY_LABELS, EQUIPMENT_LABELS, type Goal, type Activit
 import { uploadFile } from "@/lib/upload";
 
 export const Route = createFileRoute("/_authenticated/_app/trainer-plans")({
-  head: () => ({ meta: [{ title: "خططي كمدربة — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "خططي كمدربة — EVOLVA" }] }),
   component: TrainerPlansPage,
 });
+
+
+
+
+
+
+
+
+
+
 
 function TrainerPlansPage() {
   const { user, role, loading } = useAuth();

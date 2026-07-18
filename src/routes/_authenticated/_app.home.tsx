@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -16,8 +16,10 @@ import {
   Clock,
   Users,
   ChevronLeft,
+  ChevronRight,
   CalendarDays,
   Moon,
+  CheckCircle2,
 } from "lucide-react";
 import { bmiCategory } from "@/lib/workout-rules";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,10 +28,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 // لسا ما تحدّث ليعرف بعمود read الجديد بجدول messages. هيك بنتفادى أخطاء TypeScript.
 const db = supabase as any;
 
+// جدول workout_logs فيه عمودين جديدين (day_index و exercise_index) مش موجودين بعد بملف الأنواع
+// المولّد تلقائياً تبع Supabase — نفس فكرة "db" فوق، بس مخصص لجدول workout_logs
+const workoutLogsTable = () => (supabase as any).from("workout_logs");
+
 const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const DAYS_SHORT = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"];
 
 export const Route = createFileRoute("/_authenticated/_app/home")({
-  head: () => ({ meta: [{ title: "الرئيسية — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "الرئيسية — EVOLVA" }] }),
   component: HomePage,
 });
 
@@ -37,6 +44,14 @@ export const Route = createFileRoute("/_authenticated/_app/home")({
 function isFixedWeekPlan(plan: any): boolean {
   const days = Array.isArray(plan?.exercises) ? plan.exercises : [];
   return days.length === 7 && days.every((d: any) => d?.day_of_week != null);
+}
+
+// نحوّل تاريخ لصيغة "YYYY-MM-DD" محلية (بدون أي تحويل تايم زون) عشان نقارن الأيام ببعض بدقة
+function toDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function HomePage() {
@@ -49,6 +64,8 @@ function HomePage() {
 
   // الخطة النشطة حالياً (شخصية أو من مدربة) — نفس الجدول والمنطق المستخدم بصفحة التمارين
   const [activeWorkout, setActiveWorkout] = useState<any>(null);
+  // مصدر الخطة النشطة (نوعها ومعرّفها) — لازم نعرفهم عشان نقدر نجيب سجلات الإنجاز الصحيحة للتقويم
+  const [activeWorkoutSource, setActiveWorkoutSource] = useState<{ type: "trainer" | "personal"; id: string } | null>(null);
 
   const [weightLogs, setWeightLogs] = useState<any[]>([]);
   const [nutritionPlan, setNutritionPlan] = useState<any>(null);
@@ -118,8 +135,10 @@ function HomePage() {
       if (sel?.workout_plan_id) {
         const { data: w } = await supabase.from("workouts").select("*").eq("id", sel.workout_plan_id).maybeSingle();
         setActiveWorkout(w ?? null);
+        setActiveWorkoutSource(w ? { type: sel.workout_plan_type, id: sel.workout_plan_id } : null);
       } else {
         setActiveWorkout(null);
+        setActiveWorkoutSource(null);
       }
 
       // خطة التغذية: نفضّل الخطة المعتمدة صراحة (نفس اختيار active_plan_selection)، وإلا خطة خاصة، وإلا أقرب خطة عامة لهدفها
@@ -220,6 +239,22 @@ function HomePage() {
             )}
           </div>
 
+          {/* تقويم التقدّم: بيعرض جدولك الأسبوعي متكرر على كل أيام الشهر، ولما تخلّصي تمارين يوم معيّن بينشطب تلقائياً */}
+          {loading ? (
+            <Skeleton className="h-72 rounded-3xl" />
+          ) : activeWorkout && activeWorkoutSource && isFixedWeekPlan(activeWorkout) ? (
+            <WorkoutCalendarCard
+              activeWorkout={activeWorkout}
+              userId={user!.id}
+              sourceType={activeWorkoutSource.type}
+              sourceId={activeWorkoutSource.id}
+            />
+          ) : (
+            <Card className="p-4 rounded-2xl border-dashed text-center text-xs text-muted-foreground">
+              اعتمدي خطة بجدول أسبوعي ثابت (من صفحة التمارين) عشان يظهر هون تقويم تقدمك اليومي
+            </Card>
+          )}
+
           {!loading && <NutritionSnippetCard plan={nutritionPlan} fp={fp} />}
 
           <div className="grid grid-cols-2 gap-3">
@@ -307,7 +342,7 @@ function TodayWorkoutHero({ activeWorkout }: { activeWorkout: any }) {
               <div className="text-3xl font-extrabold mt-1">{muscleGroup || "تمرين عام"}</div>
               {items.length > 0 && (
                 <div className="flex items-center gap-1 text-xs opacity-90 mt-1.5">
-                  <Clock className="w-3.5 h-3.5" /> {items.length} تمارين · ~{items.length * 4} د تقريبًا
+                  <Clock className="w-3.5 h-3.5" /> {items.length} تمارين · ~{items.length * 20} د تقريبًا
                 </div>
               )}
             </>
@@ -321,6 +356,215 @@ function TodayWorkoutHero({ activeWorkout }: { activeWorkout: any }) {
         </Link>
       </div>
     </motion.div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* تقويم التقدّم: جدولك الأسبوعي متكرر على كل أيام الشهر + تشطيب الأيام المنجزة */
+/* ------------------------------------------------------------------ */
+
+type WeekdaySchedule = { label: string; isRest: boolean; itemsCount: number };
+
+function WorkoutCalendarCard({
+  activeWorkout,
+  userId,
+  sourceType,
+  sourceId,
+}: {
+  activeWorkout: any;
+  userId: string;
+  sourceType: "trainer" | "personal";
+  sourceId: string;
+}) {
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [completedDates, setCompletedDates] = useState<Set<string>>(new Set());
+  const [loadingCal, setLoadingCal] = useState(true);
+
+  // خريطة: رقم اليوم بالأسبوع (0-6) -> تسمية العضلة/التمرين المجدولة له + هل هو يوم راحة + عدد تمارينه
+  const scheduleByWeekday = useMemo(() => {
+    const map = new Map<number, WeekdaySchedule>();
+    const rawDays: any[] = Array.isArray(activeWorkout?.exercises) ? activeWorkout.exercises : [];
+    rawDays.forEach((d: any) => {
+      const itemsCount = Array.isArray(d.items) ? d.items.length : 0;
+      const isRest = !!d.is_rest || itemsCount === 0;
+      map.set(Number(d.day_of_week), {
+        label: isRest ? "راحة" : (d.muscle_group?.trim() || "تمرين"),
+        isRest,
+        itemsCount,
+      });
+    });
+    return map;
+  }, [activeWorkout]);
+
+  // حدود الشهر المعروض + خانات الشبكة (بما فيها أيام من الشهر السابق/التالي لتعبئة الأسبوع)
+  const { year, month, monthLabel, gridStart, gridEnd, cells } = useMemo(() => {
+    const base = new Date();
+    base.setDate(1);
+    base.setMonth(base.getMonth() + monthOffset);
+    const y = base.getFullYear();
+    const m = base.getMonth();
+
+    const firstOfMonth = new Date(y, m, 1);
+    const lastOfMonth = new Date(y, m + 1, 0);
+    const gStart = new Date(firstOfMonth);
+    gStart.setDate(gStart.getDate() - gStart.getDay());
+    const gEnd = new Date(lastOfMonth);
+    gEnd.setDate(gEnd.getDate() + (6 - gEnd.getDay()));
+
+    const list: Date[] = [];
+    const cursor = new Date(gStart);
+    while (cursor <= gEnd) {
+      list.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return {
+      year: y,
+      month: m,
+      monthLabel: new Intl.DateTimeFormat("ar", { month: "long", year: "numeric" }).format(base),
+      gridStart: gStart,
+      gridEnd: gEnd,
+      cells: list,
+    };
+  }, [monthOffset]);
+
+  useEffect(() => {
+    if (!userId || !sourceId) {
+      setLoadingCal(false);
+      return;
+    }
+    (async () => {
+      setLoadingCal(true);
+      const rangeStart = new Date(gridStart);
+      rangeStart.setHours(0, 0, 0, 0);
+      const rangeEnd = new Date(gridEnd);
+      rangeEnd.setHours(23, 59, 59, 999);
+
+      const { data, error } = await workoutLogsTable()
+        .select("completed_at, day_index, exercise_index")
+        .eq("user_id", userId)
+        .eq("source_type", sourceType)
+        .eq("source_id", sourceId)
+        .gte("completed_at", rangeStart.toISOString())
+        .lte("completed_at", rangeEnd.toISOString());
+
+      if (error) {
+        console.error("workout calendar load error:", error);
+        setCompletedDates(new Set());
+        setLoadingCal(false);
+        return;
+      }
+
+      // بنجمع، لكل (تاريخ + رقم اليوم بالأسبوع المسجّل فعلياً بالسجل)، مجموعة أرقام التمارين المنجزة
+      const grouped = new Map<string, Set<number>>();
+      (data ?? []).forEach((row: any) => {
+        if (row.day_index === null || row.day_index === undefined) return;
+        const d = new Date(row.completed_at);
+        const dateKey = toDateKey(d);
+        const groupKey = `${dateKey}|${row.day_index}`;
+        if (!grouped.has(groupKey)) grouped.set(groupKey, new Set());
+        if (row.exercise_index !== null && row.exercise_index !== undefined) {
+          grouped.get(groupKey)!.add(row.exercise_index);
+        }
+      });
+
+      // نحدد الأيام "المكتملة": التاريخ اللي فيه، بيوم أسبوعه الحقيقي هو نفسه، تم تسجيل كل التمارين المجدولة إله
+      const done = new Set<string>();
+      cells.forEach((cellDate) => {
+        const weekday = cellDate.getDay();
+        const sched = scheduleByWeekday.get(weekday);
+        if (!sched || sched.isRest || sched.itemsCount === 0) return;
+        const dateKey = toDateKey(cellDate);
+        const groupKey = `${dateKey}|${weekday}`;
+        const doneSet = grouped.get(groupKey);
+        if (doneSet && doneSet.size >= sched.itemsCount) {
+          done.add(dateKey);
+        }
+      });
+
+      setCompletedDates(done);
+      setLoadingCal(false);
+    })();
+  }, [userId, sourceType, sourceId, monthOffset, scheduleByWeekday]);
+
+  const todayKey = toDateKey(new Date());
+
+  return (
+    <Card className="p-4 rounded-2xl border-none shadow-soft">
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={() => setMonthOffset((v) => v - 1)}
+          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-muted transition"
+          aria-label="الشهر السابق"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        <div className="font-bold text-sm flex items-center gap-1.5">
+          <CalendarDays className="w-4 h-4 text-primary" /> {monthLabel}
+        </div>
+        <button
+          onClick={() => setMonthOffset((v) => v + 1)}
+          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-muted transition"
+          aria-label="الشهر التالي"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+      </div>
+
+      {loadingCal ? (
+        <Skeleton className="h-56 rounded-2xl" />
+      ) : (
+        <>
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-muted-foreground mb-1.5">
+            {DAYS_SHORT.map((d) => (
+              <div key={d}>{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((cellDate, idx) => {
+              const inMonth = cellDate.getMonth() === month;
+              const weekday = cellDate.getDay();
+              const sched = scheduleByWeekday.get(weekday);
+              const dateKey = toDateKey(cellDate);
+              const isDone = completedDates.has(dateKey);
+              const isToday = dateKey === todayKey;
+
+              return (
+                <div
+                  key={idx}
+                  className={`rounded-xl p-1 text-center min-h-[52px] flex flex-col items-center justify-start gap-0.5 ${
+                    inMonth ? "" : "opacity-30"
+                  } ${isToday ? "ring-2 ring-primary" : ""}`}
+                >
+                  <div className="text-[10px] font-bold">{cellDate.getDate()}</div>
+                  {sched && (
+                    <div
+                      className={`w-full text-[8.5px] leading-tight rounded-md px-1 py-0.5 truncate font-semibold ${
+                        sched.isRest
+                          ? "bg-muted text-muted-foreground"
+                          : isDone
+                          ? "bg-primary/20 text-primary line-through"
+                          : "bg-secondary text-primary"
+                      }`}
+                    >
+                      {sched.label}
+                    </div>
+                  )}
+                  {isDone && !sched?.isRest && (
+                    <CheckCircle2 className="w-3 h-3 text-primary" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-secondary" /> مجدول</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-primary/20" /> تم الإنجاز</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-muted" /> راحة</span>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

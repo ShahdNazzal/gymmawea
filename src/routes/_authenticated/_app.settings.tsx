@@ -13,7 +13,7 @@ import { calcCalories, matchNutritionPlan } from "@/lib/nutrition-rules";
 import { ArrowRight, Moon, Sun } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/_app/settings")({
-  head: () => ({ meta: [{ title: "الإعدادات — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "الإعدادات — EVOLVA" }] }),
   component: SettingsPage,
 });
 

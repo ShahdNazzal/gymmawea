@@ -75,8 +75,8 @@ export function DesktopSidebar() {
         <div className="flex items-center gap-2">
   <img
   src="/favicon.png"
-  alt="جمّاوية"
-  className="w-50 h-15 object-contain block"
+  alt="EVOLVA"
+  className="w-70  object-contain block"
 />
 </div>
       </div>

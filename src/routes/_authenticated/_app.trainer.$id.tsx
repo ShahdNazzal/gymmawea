@@ -9,7 +9,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/_app/trainer/$id")({
-  head: () => ({ meta: [{ title: "المدربة — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "المدربة — EVOLVA" }] }),
   component: TrainerProfile,
 });
 

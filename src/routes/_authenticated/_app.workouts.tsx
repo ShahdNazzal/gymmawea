@@ -1,4 +1,3 @@
-//C:\Users\lenovo\Downloads\jammawia-main (1)\jammawia-main\src\routes\_authenticated\_app.workouts.tsx
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,15 +10,15 @@ import { Label } from "@/components/ui/label";
 import {
   Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2,
   ImagePlus, ChevronDown, ChevronUp, Play, Youtube, Moon, Pencil,
+  Droplets, PartyPopper,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { uploadFile } from "@/lib/upload";
-import { workerData } from "worker_threads";
 
 export const Route = createFileRoute("/_authenticated/_app/workouts")({
-  head: () => ({ meta: [{ title: "التمارين — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "التمارين — EVOLVA" }] }),
   component: WorkoutsPage,
 });
 
@@ -47,6 +46,17 @@ function isFixedWeekPlan(plan: any): boolean {
   const days = Array.isArray(plan?.exercises) ? plan.exercises : [];
   return days.length === 7 && days.every((d: any) => typeof d?.day_of_week === "number");
 }
+
+function startOfTodayISO() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+// جدول workout_logs فيه عمودين جديدين (day_index و exercise_index) مش موجودين بعد بملف الأنواع
+// المولّد تلقائياً تبع Supabase (types.ts)، فبنعمل تحويل بسيط هون بدل "as any" بكل سطر.
+// أفضل حل دائم هو تحديث types.ts عن طريق: npx supabase gen types typescript --project-id <PROJECT_ID> --schema public
+const workoutLogsTable = () => (supabase as any).from("workout_logs");
 
 // ---------- أدوات الصوت المشتركة (شغّالة على اللابتوب والموبايل) ----------
 
@@ -150,6 +160,63 @@ function ConfettiBurst({ triggerKey }: { triggerKey: number }) {
   return <canvas ref={canvasRef} className="fixed inset-0 z-[9999] pointer-events-none" />;
 }
 
+// ---------- كارد الاحتفال بعد إنهاء تمارين اليوم بالكامل ----------
+
+function WorkoutCompletionCard({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 z-[9998] bg-black/40 backdrop-blur-xl flex items-center justify-center p-6"
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 20 }}
+            onClick={(e) => e.stopPropagation()}
+            className="glass max-w-sm w-full rounded-3xl p-6 space-y-4 border border-white/30 shadow-2xl text-center"
+          >
+            <PartyPopper className="w-10 h-10 mx-auto text-primary" />
+            <div>
+              <h3 className="font-extrabold text-xl">أحسنتِ! 🎉</h3>
+              <p className="text-sm text-muted-foreground mt-1">خلّصتِ تمارين اليوم بالكامل</p>
+            </div>
+
+            <div className="space-y-2.5 text-right">
+              <div className="flex items-start gap-2">
+                <Moon className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <p className="text-xs leading-relaxed">
+                  خذي قسط كافي من الراحة الليلة — عضلاتك بتنمو وقت الراحة مش وقت التمرين
+                </p>
+              </div>
+              <div className="flex items-start gap-2">
+                <Dumbbell className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <p className="text-xs leading-relaxed">
+                  كمّلي احتياجك اليومي من البروتين عشان تدعمي عضلاتك وتسرّعي التعافي
+                </p>
+              </div>
+              <div className="flex items-start gap-2">
+                <Droplets className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <p className="text-xs leading-relaxed">اشربي مي كفاية لتعويض اللي فقدتيه أثناء التمرين</p>
+              </div>
+            </div>
+
+            <p className="text-xs font-bold text-primary">
+              كل يوم بتخلصي فيه تمرينك، بتقتربي خطوة أكتر من نسختك الأفضل ✨
+            </p>
+
+            <Button onClick={onClose} className="w-full rounded-2xl gradient-primary">تمام</Button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function WorkoutsPage() {
   const { user } = useAuth();
   const [active, setActive] = useState<any>(null);
@@ -160,6 +227,11 @@ function WorkoutsPage() {
   const [newPlanOpen, setNewPlanOpen] = useState(false);
   const [timerOpen, setTimerOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<any>(null);
+
+  // سجلات اليوم الخام (workout_logs) — مصدر الحقيقة الوحيد لحالة الـ check لكل تمرين.
+  // بيتصفّر تلقائياً كل يوم جديد (نفس فكرة meal_logs بصفحة التغذية)
+  const [todayWorkoutLogs, setTodayWorkoutLogs] = useState<any[]>([]);
+  const [completionCardOpen, setCompletionCardOpen] = useState(false);
 
   // ===== مؤقت الراحة — الحالة مركزية هنا عشان تضل شغالة حتى لو الديالوج مقفول أو التطبيق بالخلفية =====
   const [timerSec, setTimerSec] = useState(0);
@@ -253,8 +325,13 @@ function WorkoutsPage() {
   const loadAll = async () => {
     if (!user) return;
     setLoading(true);
-    const { data: sel } = await supabase.from("active_plan_selection").select("*").eq("user_id", user.id).maybeSingle();
+    const [{ data: sel }, { data: todayLogs }] = await Promise.all([
+      supabase.from("active_plan_selection").select("*").eq("user_id", user.id).maybeSingle(),
+      // نفس فكرة meal_logs: بنجيب بس سجلات اليوم، فلما يبلّش يوم جديد بترجع فاضية تلقائياً
+      workoutLogsTable().select("*").eq("user_id", user.id).gte("completed_at", startOfTodayISO()),
+    ]);
     setActive(sel);
+    setTodayWorkoutLogs(todayLogs ?? []);
     setTrainerPlan(null);
     if (sel?.workout_plan_type === "trainer" && sel?.workout_plan_id) {
       const { data: w } = await supabase.from("workouts").select("*").eq("id", sel.workout_plan_id).maybeSingle();
@@ -266,6 +343,18 @@ function WorkoutsPage() {
   };
 
   useEffect(() => { loadAll(); }, [user]);
+
+  // بتتنادى من ExerciseRow فور ما تنعمل صح على تمرين (بعد ما ينحفظ السجل فعلياً بقاعدة البيانات)
+  const addTodayWorkoutLog = (logRow: any) => {
+    if (!logRow) return;
+    setTodayWorkoutLogs((prev) => [...prev, logRow]);
+  };
+
+  // بتتنادى من ExerciseRow فور ما ينشال صح عن تمرين (بعد ما ينحذف السجل فعلياً من قاعدة البيانات)
+  const removeTodayWorkoutLog = (logId: string | null) => {
+    if (!logId) return;
+    setTodayWorkoutLogs((prev) => prev.filter((l: any) => l.id !== logId));
+  };
 
   const activePersonal = personalPlans.find((p) => p.id === active?.workout_plan_id);
   const currentType = active?.workout_plan_type;
@@ -303,6 +392,11 @@ function WorkoutsPage() {
               userId={user!.id}
               sourceType={activeSourceType!}
               sourceId={activePlan.id}
+              todayLogs={todayWorkoutLogs}
+              onAddLog={addTodayWorkoutLog}
+              onRemoveLog={removeTodayWorkoutLog}
+              onOpenTimer={() => setTimerOpen(true)}
+              onAllTodayDone={() => setCompletionCardOpen(true)}
             />
           )}
         </Card>
@@ -439,6 +533,7 @@ function WorkoutsPage() {
         onStart={startTimer}
         onStop={stopTimer}
       />
+      <WorkoutCompletionCard open={completionCardOpen} onClose={() => setCompletionCardOpen(false)} />
     </div>
   );
 }
@@ -466,35 +561,86 @@ function VideoPlayerDialog({ open, onClose, youtubeId, title }: { open: boolean;
   );
 }
 
-// عنصر تمرين واحد: فيديو + اسم + شرح أداء + نصيحة + زر تسجيل الإنجاز مع كونفيتي وصوت احتفال
-function ExerciseRow({ name, sets, reps, videoUrl, instruction, tips, userId, sourceType, sourceId }: any) {
-  const [done, setDone] = useState(false);
+// عنصر تمرين واحد: فيديو + اسم + شرح أداء + نصيحة + زر تسجيل/إلغاء الإنجاز
+// بيتذكّر حالته من قاعدة البيانات (initialDone/initialLogId)، وبيقدر يتحط عليه صح ويتشال بحرية.
+// لو التمرين تبع "اليوم" الحقيقي ومش آخر تمرين بجدول اليوم -> بيفتح مؤقت الراحة تلقائياً بعد الصح.
+// لو هو آخر تمرين بجدول اليوم -> بتظهر كارد الاحتفال بدل المؤقت.
+// لو التمرين تبع يوم تاني مش اليوم الحقيقي -> بيتسجل عادي بس مع تنبيه بسيط.
+function ExerciseRow({
+  name, sets, reps, videoUrl, instruction, tips,
+  userId, sourceType, sourceId, dayIndex, exerciseIndex, isToday, isLastOfDay,
+  initialDone, initialLogId, onAddLog, onRemoveLog, onOpenTimer, onAllTodayDone,
+}: any) {
+  const [done, setDone] = useState(!!initialDone);
+  const [logId, setLogId] = useState<string | null>(initialLogId ?? null);
+  const [busy, setBusy] = useState(false);
   const [videoOpen, setVideoOpen] = useState(false);
   const [confettiKey, setConfettiKey] = useState(0);
   const youtubeId = getYouTubeId(videoUrl);
+
+  const handleToggle = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (!done) {
+        // تسجيل التمرين — بنحتفظ بموقعه بالضبط (day_index + exercise_index) عشان يضل معروف
+        // إنه هو بالذات لما نرجع نحمّل الصفحة، وعشان نقدر نميّز إذا هو تبع اليوم الحقيقي ولا لأ
+        playCompletionChime();
+        setConfettiKey(Date.now());
+        const { data, error } = await workoutLogsTable()
+          .insert({
+            user_id: userId,
+            source_type: sourceType,
+            source_id: sourceId,
+            exercise_name: name,
+            day_index: dayIndex,
+            exercise_index: exerciseIndex,
+            sets, reps,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        setDone(true);
+        setLogId(data?.id ?? null);
+        onAddLog?.(data);
+        toast.success("تم تسجيل التمرين 🎉");
+
+        if (!isToday) {
+          toast("هاي تمارين ليوم تاني", {
+            description: "تم تسجيلها، بس هاد الجدول مش خاص بيومك الحالي",
+          });
+        } else if (isLastOfDay) {
+          onAllTodayDone?.();
+        } else {
+          onOpenTimer?.();
+        }
+      } else {
+        // إلغاء الصح — بنحذف السجل بالضبط بالاعتماد على id تبعه
+        if (logId) {
+          const { error } = await workoutLogsTable().delete().eq("id", logId);
+          if (error) throw error;
+          onRemoveLog?.(logId);
+        }
+        setDone(false);
+        setLogId(null);
+        toast.success("تم إلغاء تسجيل التمرين");
+      }
+    } catch (err: any) {
+      toast.error(err.message ?? "صار في خطأ، حاولي مرة ثانية");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <li className="p-2.5 rounded-xl hover:bg-muted/50 relative">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <button
-            onClick={async (e) => {
-              e.stopPropagation();
-              if (!done) {
-                playCompletionChime();
-                setConfettiKey(Date.now());
-              }
-              await supabase.from("workout_logs").insert({
-                user_id: userId,
-                source_type: sourceType,
-                source_id: sourceId,
-                exercise_name: name,
-                sets, reps,
-              });
-              setDone(true);
-              toast.success("تم تسجيل التمرين 🎉");
-            }}
-            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition ${done ? "gradient-primary border-primary" : "border-border"}`}
+            disabled={busy}
+            onClick={handleToggle}
+            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition ${done ? "gradient-primary border-primary" : "border-border"} ${busy ? "opacity-60" : ""}`}
           >
             {done && <CheckCircle2 className="w-4 h-4 text-primary-foreground" />}
           </button>
@@ -531,11 +677,42 @@ function ExerciseRow({ name, sets, reps, videoUrl, instruction, tips, userId, so
 }
 
 // عرض الجدول الأسبوعي بالاعتماد الكامل على الخطة النشطة حالياً (شخصية أو مدربة)
-function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any; userId: string; sourceType: "trainer" | "personal"; sourceId: string }) {
+function ActiveScheduleView({
+  plan, userId, sourceType, sourceId, todayLogs, onAddLog, onRemoveLog, onOpenTimer, onAllTodayDone,
+}: {
+  plan: any; userId: string; sourceType: "trainer" | "personal"; sourceId: string;
+  todayLogs: any[]; onAddLog: (row: any) => void; onRemoveLog: (id: string | null) => void;
+  onOpenTimer: () => void; onAllTodayDone: () => void;
+}) {
   const fixedWeek = isFixedWeekPlan(plan);
   const rawDays: any[] = Array.isArray(plan.exercises) ? plan.exercises : [];
   const days = fixedWeek ? [...rawDays].sort((a, b) => a.day_of_week - b.day_of_week) : rawDays;
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+
+  // اليوم الحقيقي الفعلي (0 = الأحد ... 6 = السبت). بما إنه خطة "الأسبوع الثابت" دايماً فيها 7 عناصر
+  // مرتبة حسب day_of_week من 0 لـ6، فموقع اليوم بالمصفوفة المرتبة بيطابق day_of_week نفسه تماماً
+  const todayIdx = new Date().getDay();
+
+  // بنحسب، لكل تمرين (بموقعه بالضبط day_index+exercise_index)، آخر سجل اليوم إله (لو موجود)
+  // لنفس المصدر (trainer/personal + id) — هيك كل تمرين بتمييزه بدقة بغض النظر عن اسمه
+  const logsByKey = new Map<string, any>();
+  (todayLogs ?? [])
+    .filter(
+      (l: any) =>
+        l.source_type === sourceType &&
+        l.source_id === sourceId &&
+        l.day_index !== null &&
+        l.day_index !== undefined &&
+        l.exercise_index !== null &&
+        l.exercise_index !== undefined
+    )
+    .forEach((l: any) => {
+      const key = `${l.day_index}-${l.exercise_index}`;
+      const existing = logsByKey.get(key);
+      if (!existing || new Date(l.completed_at) > new Date(existing.completed_at)) {
+        logsByKey.set(key, l);
+      }
+    });
 
   return (
     <div className="space-y-4">
@@ -557,8 +734,12 @@ function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any;
           const dayName = fixedWeek ? DAYS[d.day_of_week] : (d.name ?? `اليوم ${i + 1}`);
           const label = !isRest && d.muscle_group ? `${dayName} - ${d.muscle_group}` : dayName;
 
+          // موقع اليوم الحقيقي: بس للخطط ذات الأسبوع الثابت، فيها معنى فعلي (day_of_week حقيقي)
+          const dayIndex = fixedWeek ? Number(d.day_of_week) : i;
+          const isToday = fixedWeek && dayIndex === todayIdx;
+
           return (
-            <div key={i} className="rounded-2xl overflow-hidden bg-muted/50">
+            <div key={i} className={`rounded-2xl overflow-hidden bg-muted/50 ${isToday ? "ring-2 ring-primary/40" : ""}`}>
               <button
                 type="button"
                 disabled={isRest && items.length === 0}
@@ -571,7 +752,14 @@ function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any;
                   <Dumbbell className="w-4 h-4 text-primary shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">{label}</div>
+                  <div className="text-sm font-semibold truncate flex items-center gap-1.5">
+                    <span className="truncate">{label}</span>
+                    {isToday && (
+                      <span className="text-[9px] font-bold bg-primary/15 text-primary px-1.5 py-0.5 rounded-full shrink-0">
+                        اليوم
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[10px] text-muted-foreground truncate">
                     {isRest ? "يوم راحة" : `${items.length} تمارين`}
                   </div>
@@ -593,20 +781,36 @@ function ActiveScheduleView({ plan, userId, sourceType, sourceId }: { plan: any;
                     className="overflow-hidden"
                   >
                     <ul className="px-2 pb-2 space-y-1 border-t border-border/50 pt-2">
-                      {items.map((ex: any, ei: number) => (
-                        <ExerciseRow
-                          key={ei}
-                          name={ex?.name ?? `تمرين ${ei + 1}`}
-                          sets={ex?.sets}
-                          reps={ex?.reps}
-                          videoUrl={ex?.video_url}
-                          instruction={ex?.instruction}
-                          tips={ex?.tips}
-                          userId={userId}
-                          sourceType={sourceType}
-                          sourceId={sourceId}
-                        />
-                      ))}
+                      {items.map((ex: any, ei: number) => {
+                        const key = `${dayIndex}-${ei}`;
+                        const existingLog = logsByKey.get(key);
+                        // آخر تمرين بجدول اليوم الحقيقي فقط -> بيطلع الاحتفال بدل المؤقت
+                        const isLastOfDay = isToday && ei === items.length - 1;
+                        return (
+                          <ExerciseRow
+                            key={ei}
+                            name={ex?.name ?? `تمرين ${ei + 1}`}
+                            sets={ex?.sets}
+                            reps={ex?.reps}
+                            videoUrl={ex?.video_url}
+                            instruction={ex?.instruction}
+                            tips={ex?.tips}
+                            userId={userId}
+                            sourceType={sourceType}
+                            sourceId={sourceId}
+                            dayIndex={dayIndex}
+                            exerciseIndex={ei}
+                            isToday={isToday}
+                            isLastOfDay={isLastOfDay}
+                            initialDone={!!existingLog}
+                            initialLogId={existingLog?.id ?? null}
+                            onAddLog={onAddLog}
+                            onRemoveLog={onRemoveLog}
+                            onOpenTimer={onOpenTimer}
+                            onAllTodayDone={onAllTodayDone}
+                          />
+                        );
+                      })}
                     </ul>
                   </motion.div>
                 )}

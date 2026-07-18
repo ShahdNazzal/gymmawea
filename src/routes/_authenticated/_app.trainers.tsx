@@ -9,7 +9,7 @@ import { Heart, Search, Users, Star } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/_authenticated/_app/trainers")({
-  head: () => ({ meta: [{ title: "المدربات — جمّاوية" }] }),
+  head: () => ({ meta: [{ title: "المدربات — EVOLVA" }] }),
   component: TrainersPage,
 });
 
