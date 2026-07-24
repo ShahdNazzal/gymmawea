@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dumbbell, Plus, CheckCircle2, Timer, X, Calendar, Trash2,
   ImagePlus, ChevronDown, ChevronUp, Play, Youtube, Moon, Pencil,
-  Droplets, PartyPopper,
+  Droplets, PartyPopper, GripVertical,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -563,12 +563,12 @@ function VideoPlayerDialog({ open, onClose, youtubeId, title }: { open: boolean;
 
 // عنصر تمرين واحد: فيديو + اسم + شرح أداء + نصيحة + زر تسجيل/إلغاء الإنجاز
 // بيتذكّر حالته من قاعدة البيانات (initialDone/initialLogId)، وبيقدر يتحط عليه صح ويتشال بحرية.
-// لو التمرين تبع "اليوم" الحقيقي ومش آخر تمرين بجدول اليوم -> بيفتح مؤقت الراحة تلقائياً بعد الصح.
-// لو هو آخر تمرين بجدول اليوم -> بتظهر كارد الاحتفال بدل المؤقت.
-// لو التمرين تبع يوم تاني مش اليوم الحقيقي -> بيتسجل عادي بس مع تنبيه بسيط.
+// لو التمرين تبع "اليوم" الحقيقي -> بيتحقق إذا هاد آخر تمرين ناقص فعلياً (بغض النظر عن ترتيبه بالقائمة)
+// عن طريق مقارنة عدد التمارين المنجزة (todayDoneCount + 1) مع إجمالي عدد تمارين اليوم (todayItemsCount).
+// لو هو فعلاً الأخير المتبقي -> بتظهر كارد الاحتفال. غير هيك -> بيفتح مؤقت الراحة.
 function ExerciseRow({
   name, sets, reps, videoUrl, instruction, tips,
-  userId, sourceType, sourceId, dayIndex, exerciseIndex, isToday, isLastOfDay,
+  userId, sourceType, sourceId, dayIndex, exerciseIndex, isToday, todayItemsCount, todayDoneCount,
   initialDone, initialLogId, onAddLog, onRemoveLog, onOpenTimer, onAllTodayDone,
 }: any) {
   const [done, setDone] = useState(!!initialDone);
@@ -610,10 +610,14 @@ function ExerciseRow({
           toast("هاي تمارين ليوم تاني", {
             description: "تم تسجيلها، بس هاد الجدول مش خاص بيومك الحالي",
           });
-        } else if (isLastOfDay) {
-          onAllTodayDone?.();
         } else {
-          onOpenTimer?.();
+          // نحسب: هل هاد التمرين هو آخر واحد ناقص فعلياً من أصل تمارين اليوم، بغض النظر عن ترتيبه بالقائمة؟
+          const newDoneCount = (todayDoneCount ?? 0) + 1;
+          if (newDoneCount >= (todayItemsCount ?? 0)) {
+            onAllTodayDone?.();
+          } else {
+            onOpenTimer?.();
+          }
         }
       } else {
         // إلغاء الصح — بنحذف السجل بالضبط بالاعتماد على id تبعه
@@ -738,6 +742,16 @@ function ActiveScheduleView({
           const dayIndex = fixedWeek ? Number(d.day_of_week) : i;
           const isToday = fixedWeek && dayIndex === todayIdx;
 
+          // كم تمرين إجمالي عند هاد اليوم، وكم منه متأشر إنه خلص فعلياً (بغض النظر عن ترتيب الإنجاز)
+          const todayItemsCount = isToday ? items.length : 0;
+          const todayDoneCount = isToday
+            ? items.reduce(
+                (count: number, _: any, idx: number) =>
+                  count + (logsByKey.has(`${dayIndex}-${idx}`) ? 1 : 0),
+                0,
+              )
+            : 0;
+
           return (
             <div key={i} className={`rounded-2xl overflow-hidden bg-muted/50 ${isToday ? "ring-2 ring-primary/40" : ""}`}>
               <button
@@ -784,8 +798,6 @@ function ActiveScheduleView({
                       {items.map((ex: any, ei: number) => {
                         const key = `${dayIndex}-${ei}`;
                         const existingLog = logsByKey.get(key);
-                        // آخر تمرين بجدول اليوم الحقيقي فقط -> بيطلع الاحتفال بدل المؤقت
-                        const isLastOfDay = isToday && ei === items.length - 1;
                         return (
                           <ExerciseRow
                             key={ei}
@@ -801,7 +813,8 @@ function ActiveScheduleView({
                             dayIndex={dayIndex}
                             exerciseIndex={ei}
                             isToday={isToday}
-                            isLastOfDay={isLastOfDay}
+                            todayItemsCount={todayItemsCount}
+                            todayDoneCount={todayDoneCount}
                             initialDone={!!existingLog}
                             initialLogId={existingLog?.id ?? null}
                             onAddLog={onAddLog}
@@ -910,6 +923,11 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
   const [days, setDays] = useState<NewPlanDay[]>(defaultDays());
   const [saving, setSaving] = useState(false);
 
+  // حالة السحب: بنحفظ مين التمرين يلي عم ينسحب حالياً (يوم + موقع)
+  // بنسمح بالإفلات بس جوا نفس اليوم (dayIdx لازم يطابق)، منعاً لأي تداخل بين الأيام
+  const [dragInfo, setDragInfo] = useState<{ dayIdx: number; exIdx: number } | null>(null);
+  const [dragOverExIdx, setDragOverExIdx] = useState<number | null>(null);
+
   // ref يضمن إننا نوصل لقيمة editPlan دايماً بدون مشاكل batching
   const editRef = useRef<any>(null);
   editRef.current = editPlan;
@@ -991,6 +1009,20 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
       prev.map((d, i) => {
         if (i !== dayIdx) return d;
         const items = d.items.map((ex, j) => (j === exIdx ? { ...ex, ...patch } : ex));
+        return { ...d, items };
+      })
+    );
+  };
+
+  // بتبدّل موقع تمرينين جوا نفس اليوم بس (dayIdx ثابت)
+  const reorderExercise = (dayIdx: number, fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    setDays((prev) =>
+      prev.map((d, i) => {
+        if (i !== dayIdx) return d;
+        const items = [...d.items];
+        const [moved] = items.splice(fromIdx, 1);
+        items.splice(toIdx, 0, moved);
         return { ...d, items };
       })
     );
@@ -1164,68 +1196,112 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
                     {d.items.length === 0 && (
                       <p className="text-[11px] text-muted-foreground">ما في تمارين بعد لهاد اليوم</p>
                     )}
-                    {d.items.map((ex, ei) => (
-                      <div key={ei} className="rounded-xl border border-border p-2 space-y-2">
-                        {/* اسم التمرين بسطر لحاله مع زر الحذف — بدل عمود ضيق كان بينضغط عالموبايل */}
-                        <div className="flex items-start gap-2">
+                    {d.items.length > 1 && (
+                      <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <GripVertical className="w-3 h-3" /> اسحبي التمارين من المقبض لتغيير ترتيبها
+                      </p>
+                    )}
+                    {d.items.map((ex, ei) => {
+                      const isDragging = dragInfo?.dayIdx === di && dragInfo?.exIdx === ei;
+                      const isDragOverTarget =
+                        dragInfo?.dayIdx === di && dragInfo?.exIdx !== ei && dragOverExIdx === ei;
+                      return (
+                        <div
+                          key={ei}
+                          draggable
+                          onDragStart={(e) => {
+                            setDragInfo({ dayIdx: di, exIdx: ei });
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDragOver={(e) => {
+                            // بنسمح بالإفلات بس إذا كان السحب جاي من جوا نفس اليوم، منعاً لأي تداخل بين الأيام
+                            if (dragInfo?.dayIdx !== di) return;
+                            e.preventDefault();
+                            setDragOverExIdx(ei);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (dragInfo && dragInfo.dayIdx === di) {
+                              reorderExercise(di, dragInfo.exIdx, ei);
+                            }
+                            setDragInfo(null);
+                            setDragOverExIdx(null);
+                          }}
+                          onDragEnd={() => {
+                            setDragInfo(null);
+                            setDragOverExIdx(null);
+                          }}
+                          className={`rounded-xl border p-2 space-y-2 bg-background transition-colors ${
+                            isDragging ? "opacity-40" : ""
+                          } ${isDragOverTarget ? "border-primary ring-2 ring-primary/30" : "border-border"}`}
+                        >
+                          {/* اسم التمرين بسطر لحاله مع مقبض السحب وزر الحذف */}
+                          <div className="flex items-start gap-2">
+                            <span
+                              className="p-2 -m-2 shrink-0 text-muted-foreground cursor-grab active:cursor-grabbing touch-none"
+                              title="اسحبي لتغيير الترتيب"
+                            >
+                              <GripVertical className="w-4 h-4" />
+                            </span>
+                            <Input
+                              value={ex.name}
+                              onChange={(e) => updateExercise(di, ei, { name: e.target.value })}
+                              placeholder="اسم التمرين"
+                              className="rounded-xl h-9 flex-1"
+                            />
+                            <button
+                              onClick={() => updateDay(di, { items: d.items.filter((_, j) => j !== ei) })}
+                              className="p-2 shrink-0 text-muted-foreground hover:text-destructive"
+                              title="حذف التمرين"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          {/* المجموعات والتكرارات بصف مستقل مع Label واضح، مريح أكتر عالموبايل */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-[10px] text-muted-foreground">مجموعات</Label>
+                              <Input
+                                type="number"
+                                value={ex.sets}
+                                onChange={(e) => updateExercise(di, ei, { sets: +e.target.value })}
+                                className="rounded-xl h-9 text-center mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-[10px] text-muted-foreground">تكرارات</Label>
+                              <Input
+                                type="number"
+                                value={ex.reps}
+                                onChange={(e) => updateExercise(di, ei, { reps: +e.target.value })}
+                                className="rounded-xl h-9 text-center mt-1"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Youtube className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <Input
+                              value={ex.video_url}
+                              onChange={(e) => updateExercise(di, ei, { video_url: e.target.value })}
+                              placeholder="رابط فيديو يوتيوب (اختياري)"
+                              className="rounded-xl h-8 text-xs"
+                            />
+                          </div>
                           <Input
-                            value={ex.name}
-                            onChange={(e) => updateExercise(di, ei, { name: e.target.value })}
-                            placeholder="اسم التمرين"
-                            className="rounded-xl h-9 flex-1"
+                            value={ex.instruction}
+                            onChange={(e) => updateExercise(di, ei, { instruction: e.target.value })}
+                            placeholder="شرح طريقة الأداء (اختياري)"
+                            className="rounded-xl h-8 text-xs"
                           />
-                          <button
-                            onClick={() => updateDay(di, { items: d.items.filter((_, j) => j !== ei) })}
-                            className="p-2 shrink-0 text-muted-foreground hover:text-destructive"
-                            title="حذف التمرين"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                        {/* المجموعات والتكرارات بصف مستقل مع Label واضح، مريح أكتر عالموبايل */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <Label className="text-[10px] text-muted-foreground">مجموعات</Label>
-                            <Input
-                              type="number"
-                              value={ex.sets}
-                              onChange={(e) => updateExercise(di, ei, { sets: +e.target.value })}
-                              className="rounded-xl h-9 text-center mt-1"
-                            />
-                          </div>
-                          <div>
-                            <Label className="text-[10px] text-muted-foreground">تكرارات</Label>
-                            <Input
-                              type="number"
-                              value={ex.reps}
-                              onChange={(e) => updateExercise(di, ei, { reps: +e.target.value })}
-                              className="rounded-xl h-9 text-center mt-1"
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Youtube className="w-4 h-4 text-muted-foreground shrink-0" />
                           <Input
-                            value={ex.video_url}
-                            onChange={(e) => updateExercise(di, ei, { video_url: e.target.value })}
-                            placeholder="رابط فيديو يوتيوب (اختياري)"
+                            value={ex.tips}
+                            onChange={(e) => updateExercise(di, ei, { tips: e.target.value })}
+                            placeholder="نصيحة سريعة (اختياري)"
                             className="rounded-xl h-8 text-xs"
                           />
                         </div>
-                        <Input
-                          value={ex.instruction}
-                          onChange={(e) => updateExercise(di, ei, { instruction: e.target.value })}
-                          placeholder="شرح طريقة الأداء (اختياري)"
-                          className="rounded-xl h-8 text-xs"
-                        />
-                        <Input
-                          value={ex.tips}
-                          onChange={(e) => updateExercise(di, ei, { tips: e.target.value })}
-                          placeholder="نصيحة سريعة (اختياري)"
-                          className="rounded-xl h-8 text-xs"
-                        />
-                      </div>
-                    ))}
+                      );
+                    })}
                     <Button
                       size="sm"
                       variant="outline"
