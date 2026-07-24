@@ -924,9 +924,21 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
   const [saving, setSaving] = useState(false);
 
   // حالة السحب: بنحفظ مين التمرين يلي عم ينسحب حالياً (يوم + موقع)
-  // بنسمح بالإفلات بس جوا نفس اليوم (dayIdx لازم يطابق)، منعاً لأي تداخل بين الأيام
+  // بنسمح بالإفلات بس جوا نفس اليوم (dayIdx لازم يطابق)، منعاً لأي تداخل بين الأيام.
+  // مبنية على Pointer Events (مش HTML5 Drag and Drop) عشان تشتغل على الموبايل واللابتوب بنفس الوقت —
+  // HTML5 draggable/onDragStart ما بيشتغل على شاشات اللمس، فهاد كان سبب المشكلة الأصلية.
   const [dragInfo, setDragInfo] = useState<{ dayIdx: number; exIdx: number } | null>(null);
   const [dragOverExIdx, setDragOverExIdx] = useState<number | null>(null);
+
+  // مرجع لعناصر الـ DOM تبع كل تمرين، مفتاحها "dayIdx-exIdx"، عشان نقدر نحسب موقع الإصبع/الماوس
+  // بالنسبة لمكان كل تمرين أثناء السحب بدون ما نعتمد على أحداث DnD الأصلية
+  const itemRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const registerItemRef = (dayIdx: number, exIdx: number) => (el: HTMLDivElement | null) => {
+    const key = `${dayIdx}-${exIdx}`;
+    if (el) itemRefsMap.current.set(key, el);
+    else itemRefsMap.current.delete(key);
+  };
 
   // ref يضمن إننا نوصل لقيمة editPlan دايماً بدون مشاكل batching
   const editRef = useRef<any>(null);
@@ -1028,6 +1040,27 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
     );
   };
 
+  // بتحسب، أثناء السحب، مين التمرين المستهدف بالاعتماد على موقع الإصبع/الماوس الحالي (clientY)
+  // مقارنةً بمنتصف كل تمرين تاني بنفس اليوم — هاد بيشتغل بنفس الطريقة سواء كان المصدر لمسة أو ماوس
+  const computeTargetIdx = (dayIdx: number, clientY: number, fallback: number) => {
+    const entries = Array.from(itemRefsMap.current.entries())
+      .filter(([key]) => key.startsWith(`${dayIdx}-`))
+      .map(([key, el]) => ({ idx: Number(key.split("-")[1]), el }))
+      .sort((a, b) => a.idx - b.idx);
+
+    let targetIdx = fallback;
+    for (const { idx, el } of entries) {
+      const rect = el.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      if (clientY < mid) {
+        targetIdx = idx;
+        break;
+      }
+      targetIdx = idx;
+    }
+    return targetIdx;
+  };
+
   const handleSave = async () => {
     if (!name.trim()) return toast.error("اكتبي اسم الخطة");
 
@@ -1065,19 +1098,7 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
         image_url = await uploadFile(imageFile, userId, "workouts");
       }
 
-      const planData = {
-        name,
-        description: description || null,
-        goal: "fitness",
-        activity_level: "moderate",
-        equipment: "home",
-        min_frequency: cleanedDays.filter((d) => !d.is_rest).length,
-        exercises: cleanedDays,
-        is_public: isPublic,
-        image_url,
-      };
-
-            if (editRef.current) {
+      if (editRef.current) {
         const result = await supabase
           .from("workouts")
           .update({
@@ -1208,38 +1229,41 @@ function NewPlanDialog({ open, onClose, userId, onSaved, editPlan }: any) {
                       return (
                         <div
                           key={ei}
-                          draggable
-                          onDragStart={(e) => {
-                            setDragInfo({ dayIdx: di, exIdx: ei });
-                            e.dataTransfer.effectAllowed = "move";
-                          }}
-                          onDragOver={(e) => {
-                            // بنسمح بالإفلات بس إذا كان السحب جاي من جوا نفس اليوم، منعاً لأي تداخل بين الأيام
-                            if (dragInfo?.dayIdx !== di) return;
-                            e.preventDefault();
-                            setDragOverExIdx(ei);
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            if (dragInfo && dragInfo.dayIdx === di) {
-                              reorderExercise(di, dragInfo.exIdx, ei);
-                            }
-                            setDragInfo(null);
-                            setDragOverExIdx(null);
-                          }}
-                          onDragEnd={() => {
-                            setDragInfo(null);
-                            setDragOverExIdx(null);
-                          }}
+                          ref={registerItemRef(di, ei)}
                           className={`rounded-xl border p-2 space-y-2 bg-background transition-colors ${
                             isDragging ? "opacity-40" : ""
                           } ${isDragOverTarget ? "border-primary ring-2 ring-primary/30" : "border-border"}`}
                         >
                           {/* اسم التمرين بسطر لحاله مع مقبض السحب وزر الحذف */}
                           <div className="flex items-start gap-2">
+                            {/* مقبض السحب: مبني على Pointer Events (touch + mouse معاً) بدل HTML5 Drag and Drop
+                                عشان يشتغل صح على الموبايل. touchAction: "none" يمنع تعارض السحب مع سكرول الصفحة */}
                             <span
-                              className="p-2 -m-2 shrink-0 text-muted-foreground cursor-grab active:cursor-grabbing touch-none"
+                              className="p-2 -m-2 shrink-0 text-muted-foreground cursor-grab active:cursor-grabbing"
+                              style={{ touchAction: "none" }}
                               title="اسحبي لتغيير الترتيب"
+                              onPointerDown={(e) => {
+                                e.preventDefault();
+                                e.currentTarget.setPointerCapture(e.pointerId);
+                                setDragInfo({ dayIdx: di, exIdx: ei });
+                                setDragOverExIdx(ei);
+                              }}
+                              onPointerMove={(e) => {
+                                if (!dragInfo || dragInfo.dayIdx !== di) return;
+                                const target = computeTargetIdx(di, e.clientY, dragOverExIdx ?? ei);
+                                setDragOverExIdx(target);
+                              }}
+                              onPointerUp={() => {
+                                if (dragInfo && dragOverExIdx !== null && dragOverExIdx !== dragInfo.exIdx) {
+                                  reorderExercise(dragInfo.dayIdx, dragInfo.exIdx, dragOverExIdx);
+                                }
+                                setDragInfo(null);
+                                setDragOverExIdx(null);
+                              }}
+                              onPointerCancel={() => {
+                                setDragInfo(null);
+                                setDragOverExIdx(null);
+                              }}
                             >
                               <GripVertical className="w-4 h-4" />
                             </span>
